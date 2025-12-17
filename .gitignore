@@ -1,0 +1,25 @@
+# Build outputs
+build/bin/
+build/darwin/
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/wailsjs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local config
+.env
+.env.local
