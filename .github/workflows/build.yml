@@ -93,6 +93,11 @@ jobs:
           update: true
           install: mingw-w64-x86_64-gcc mingw-w64-i686-gcc
 
+      # Install NSIS for Windows installer
+      - name: Install NSIS (Windows)
+        if: runner.os == 'Windows'
+        run: choco install nsis -y
+
       - name: Install frontend dependencies
         run: |
           cd frontend
@@ -105,17 +110,25 @@ jobs:
             export PATH="/c/msys64/mingw32/bin:$PATH"
             export CC=i686-w64-mingw32-gcc
             export CXX=i686-w64-mingw32-g++
+            wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }} -nsis
           elif [[ "${{ matrix.platform }}" == "windows/amd64" ]]; then
             export PATH="/c/msys64/mingw64/bin:$PATH"
+            wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }} -nsis
+          else
+            wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }}
           fi
-          wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }}
 
       # Package artifacts
       - name: Package Windows artifact
         if: runner.os == 'Windows'
         run: |
           mkdir -p dist
+          # Copy portable exe
           cp build/bin/${{ matrix.output }} dist/
+          # Copy installer if exists
+          if ls build/bin/*-installer.exe 1> /dev/null 2>&1; then
+            cp build/bin/*-installer.exe dist/${{ matrix.artifact }}-installer.exe
+          fi
         shell: bash
 
       - name: Package Linux artifact
@@ -156,9 +169,12 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release
-          # Windows
+          # Windows (portable + installer)
           cp artifacts/pfm-windows-amd64/pfm-windows-amd64.exe release/
           cp artifacts/pfm-windows-386/pfm-windows-386.exe release/
+          # Windows installers (if exist)
+          [ -f artifacts/pfm-windows-amd64/pfm-windows-amd64-installer.exe ] && cp artifacts/pfm-windows-amd64/pfm-windows-amd64-installer.exe release/ || true
+          [ -f artifacts/pfm-windows-386/pfm-windows-386-installer.exe ] && cp artifacts/pfm-windows-386/pfm-windows-386-installer.exe release/ || true
           # Linux
           cp artifacts/pfm-linux-amd64/pfm-linux-amd64 release/
           cp artifacts/pfm-linux-386/pfm-linux-386 release/
