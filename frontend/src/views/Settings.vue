@@ -2,8 +2,14 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRulesStore } from '../stores/rules'
+import { ExportData, ImportData, ClearAllData } from '../../wailsjs/go/main/App'
+import { OpenFileDialog } from '../../wailsjs/go/main/App'
 
 const store = useRulesStore()
+const importDialogVisible = ref(false)
+const importMode = ref<'replace' | 'merge'>('replace')
+const importData = ref('')
+const dataLoading = ref(false)
 
 const config = ref({
   logLevel: 'info',
@@ -187,6 +193,119 @@ function getServiceStatusText(status: string) {
       return 'Unknown'
   }
 }
+
+// Data Management Functions
+async function exportRules() {
+  try {
+    dataLoading.value = true
+    const data = await ExportData()
+    if (!data) {
+      ElMessage.warning('No data to export')
+      return
+    }
+
+    // Create and download file
+    const blob = new Blob([data], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    const timestamp = new Date().toISOString().slice(0, 10)
+    link.download = `pfm-backup-${timestamp}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+
+    ElMessage.success('Data exported successfully')
+  } catch (e: any) {
+    ElMessage.error(e.message || 'Export failed')
+  } finally {
+    dataLoading.value = false
+  }
+}
+
+function openImportDialog() {
+  importData.value = ''
+  importMode.value = 'replace'
+  importDialogVisible.value = true
+}
+
+async function handleFileSelect() {
+  try {
+    const content = await OpenFileDialog()
+    if (content) {
+      importData.value = content
+      ElMessage.success('File loaded')
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || 'Failed to open file')
+  }
+}
+
+async function confirmImport() {
+  if (!importData.value.trim()) {
+    ElMessage.warning('Please select or paste import data')
+    return
+  }
+
+  // Validate JSON
+  try {
+    JSON.parse(importData.value)
+  } catch {
+    ElMessage.error('Invalid JSON format')
+    return
+  }
+
+  try {
+    dataLoading.value = true
+    const merge = importMode.value === 'merge'
+    await ImportData(importData.value, merge)
+    await store.init() // Refresh all data
+    importDialogVisible.value = false
+    ElMessage.success(merge ? 'Data merged successfully' : 'Data imported successfully')
+  } catch (e: any) {
+    ElMessage.error(e.message || 'Import failed')
+  } finally {
+    dataLoading.value = false
+  }
+}
+
+async function clearAllData() {
+  try {
+    await ElMessageBox.confirm(
+      'This will permanently delete ALL rules and chains. This action cannot be undone!',
+      'Clear All Data',
+      {
+        type: 'error',
+        confirmButtonText: 'Delete All',
+        confirmButtonClass: 'el-button--danger'
+      }
+    )
+
+    // Double confirmation
+    await ElMessageBox.prompt(
+      'Type "DELETE" to confirm:',
+      'Final Confirmation',
+      {
+        confirmButtonText: 'Confirm',
+        cancelButtonText: 'Cancel',
+        inputPattern: /^DELETE$/,
+        inputErrorMessage: 'Please type DELETE exactly'
+      }
+    )
+
+    dataLoading.value = true
+    await ClearAllData()
+    await store.init() // Refresh all data
+    ElMessage.success('All data has been cleared')
+  } catch (e: any) {
+    if (e !== 'cancel' && e?.message !== 'cancel') {
+      ElMessage.error(e.message || 'Failed to clear data')
+    }
+  } finally {
+    dataLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -354,7 +473,7 @@ function getServiceStatusText(status: string) {
       </template>
 
       <el-alert
-        type="warning"
+        type="info"
         :closable="false"
         show-icon
         style="margin-bottom: 20px"
@@ -364,25 +483,72 @@ function getServiceStatusText(status: string) {
         </template>
       </el-alert>
 
-      <el-space>
-        <el-button type="primary" plain disabled>
+      <el-space wrap>
+        <el-button type="primary" :loading="dataLoading" @click="exportRules">
           <el-icon><Upload /></el-icon>
-          Export Rules
+          Export Data
         </el-button>
-        <el-button type="primary" plain disabled>
+        <el-button type="success" :loading="dataLoading" @click="openImportDialog">
           <el-icon><Download /></el-icon>
-          Import Rules
+          Import Data
         </el-button>
-        <el-button type="danger" plain disabled>
+        <el-button type="danger" plain :loading="dataLoading" @click="clearAllData">
           <el-icon><Delete /></el-icon>
           Clear All Data
         </el-button>
       </el-space>
 
-      <el-text type="info" style="display: block; margin-top: 12px">
-        (Coming soon)
-      </el-text>
+      <el-descriptions :column="2" border style="margin-top: 20px">
+        <el-descriptions-item label="Total Rules">{{ store.rules.length }}</el-descriptions-item>
+        <el-descriptions-item label="Total Chains">{{ store.chains.length }}</el-descriptions-item>
+      </el-descriptions>
     </el-card>
+
+    <!-- Import Dialog -->
+    <el-dialog
+      v-model="importDialogVisible"
+      title="Import Data"
+      width="550px"
+    >
+      <el-form label-width="100px">
+        <el-form-item label="Import Mode">
+          <el-radio-group v-model="importMode">
+            <el-radio value="replace">Replace All</el-radio>
+            <el-radio value="merge">Merge</el-radio>
+          </el-radio-group>
+          <div class="import-mode-tip">
+            <span v-if="importMode === 'replace'">Replace mode will overwrite all existing data.</span>
+            <span v-else>Merge mode will add new items and update existing ones by ID.</span>
+          </div>
+        </el-form-item>
+
+        <el-form-item label="Data Source">
+          <div class="import-source">
+            <el-button type="primary" plain @click="handleFileSelect">
+              <el-icon><FolderOpened /></el-icon>
+              Select File
+            </el-button>
+            <span class="file-tip">or paste JSON below</span>
+          </div>
+        </el-form-item>
+
+        <el-form-item label="JSON Data">
+          <el-input
+            v-model="importData"
+            type="textarea"
+            :rows="10"
+            placeholder='{"rules": [...], "chains": [...]}'
+          />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="importDialogVisible = false">Cancel</el-button>
+        <el-button type="primary" :loading="dataLoading" @click="confirmImport">
+          Import
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -421,5 +587,22 @@ function getServiceStatusText(status: string) {
 .about-links {
   display: flex;
   align-items: center;
+}
+
+.import-mode-tip {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 8px;
+}
+
+.import-source {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.file-tip {
+  color: #909399;
+  font-size: 13px;
 }
 </style>

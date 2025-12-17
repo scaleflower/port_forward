@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"os"
 	"runtime"
 
 	"pfm/internal/daemon"
@@ -11,6 +12,8 @@ import (
 	"pfm/internal/ipc"
 	"pfm/internal/models"
 	"pfm/internal/storage"
+
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct represents the application
@@ -55,7 +58,7 @@ func (a *App) startup(ctx context.Context) {
 	a.engine = engine.New()
 	a.engine.SetChains(a.store.GetChains())
 
-	// Start enabled rules
+	// Start enabled rules and sync status
 	for _, rule := range a.store.GetRules() {
 		if rule.Enabled {
 			if err := a.engine.StartRule(rule); err != nil {
@@ -63,6 +66,11 @@ func (a *App) startup(ctx context.Context) {
 				a.store.UpdateRuleStatus(rule.ID, models.RuleStatusError, err.Error())
 			} else {
 				a.store.UpdateRuleStatus(rule.ID, models.RuleStatusRunning, "")
+			}
+		} else {
+			// Sync status: if not enabled but status is running, reset to stopped
+			if rule.Status == models.RuleStatusRunning {
+				a.store.UpdateRuleStatus(rule.ID, models.RuleStatusStopped, "")
 			}
 		}
 	}
@@ -182,10 +190,15 @@ func (a *App) StopRule(id string) error {
 		return a.ipcClient.StopRule(id)
 	}
 
+	// Try to stop the service (ignore "not running" error)
 	if err := a.engine.StopRule(id); err != nil {
-		return err
+		// If service is not running, just update the status
+		if err != models.ErrServiceNotRunning {
+			return err
+		}
 	}
 
+	// Always update status to stopped
 	a.store.UpdateRuleStatus(id, models.RuleStatusStopped, "")
 	return nil
 }
@@ -377,6 +390,56 @@ func (a *App) ImportData(data string, merge bool) error {
 	return nil
 }
 
+// OpenFileDialog opens a file dialog and returns the file content
+func (a *App) OpenFileDialog() (string, error) {
+	file, err := wailsRuntime.OpenFileDialog(a.ctx, wailsRuntime.OpenDialogOptions{
+		Title: "Select Import File",
+		Filters: []wailsRuntime.FileFilter{
+			{
+				DisplayName: "JSON Files (*.json)",
+				Pattern:     "*.json",
+			},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	if file == "" {
+		return "", nil // User cancelled
+	}
+
+	// Read file content
+	content, err := os.ReadFile(file)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+// ClearAllData clears all rules and chains
+func (a *App) ClearAllData() error {
+	// Stop all running rules first
+	for _, rule := range a.store.GetRules() {
+		if rule.Status == models.RuleStatusRunning {
+			a.engine.StopRule(rule.ID)
+		}
+	}
+
+	// Clear data by importing empty data
+	emptyData := &models.AppData{
+		Config: a.store.GetConfig(),
+		Rules:  []*models.Rule{},
+		Chains: []*models.Chain{},
+	}
+
+	if err := a.store.ImportData(emptyData, false); err != nil {
+		return err
+	}
+
+	a.engine.SetChains([]*models.Chain{})
+	return nil
+}
+
 // ==================== Utility Functions ====================
 
 // NewRule creates a new rule with default values
@@ -395,5 +458,133 @@ func (a *App) GetSystemInfo() map[string]string {
 		"os":      runtime.GOOS,
 		"arch":    runtime.GOARCH,
 		"version": runtime.Version(),
+	}
+}
+
+// ==================== Statistics Operations ====================
+
+// GetRuleStats returns statistics for a specific rule
+func (a *App) GetRuleStats(ruleID string) *models.RuleStats {
+	if a.useIPC {
+		// TODO: implement IPC call
+		return &models.RuleStats{RuleID: ruleID}
+	}
+	if a.engine == nil {
+		return &models.RuleStats{RuleID: ruleID}
+	}
+	return a.engine.GetRuleStats(ruleID)
+}
+
+// GetAllRuleStats returns statistics for all rules
+func (a *App) GetAllRuleStats() map[string]*models.RuleStats {
+	if a.useIPC {
+		// TODO: implement IPC call
+		return make(map[string]*models.RuleStats)
+	}
+	if a.engine == nil {
+		return make(map[string]*models.RuleStats)
+	}
+	return a.engine.GetAllRuleStats()
+}
+
+// ==================== Log Operations ====================
+
+// LogEntry represents a log entry for frontend
+type LogEntry struct {
+	ID        int64  `json:"id"`
+	Timestamp string `json:"timestamp"`
+	Level     string `json:"level"`
+	RuleID    string `json:"ruleId,omitempty"`
+	RuleName  string `json:"ruleName,omitempty"`
+	Message   string `json:"message"`
+	Details   string `json:"details,omitempty"`
+}
+
+// GetLogs returns recent log entries
+func (a *App) GetLogs(count int) []LogEntry {
+	if a.useIPC {
+		// TODO: implement IPC call
+		return []LogEntry{}
+	}
+	if a.engine == nil {
+		return []LogEntry{}
+	}
+
+	logs := a.engine.GetLogs(count)
+	result := make([]LogEntry, len(logs))
+	for i, l := range logs {
+		result[i] = LogEntry{
+			ID:        l.ID,
+			Timestamp: l.Timestamp,
+			Level:     string(l.Level),
+			RuleID:    l.RuleID,
+			RuleName:  l.RuleName,
+			Message:   l.Message,
+			Details:   l.Details,
+		}
+	}
+	return result
+}
+
+// GetLogsSince returns log entries since a specific ID
+func (a *App) GetLogsSince(sinceID int64) []LogEntry {
+	if a.useIPC {
+		// TODO: implement IPC call
+		return []LogEntry{}
+	}
+	if a.engine == nil {
+		return []LogEntry{}
+	}
+
+	logs := a.engine.GetLogsSince(sinceID)
+	result := make([]LogEntry, len(logs))
+	for i, l := range logs {
+		result[i] = LogEntry{
+			ID:        l.ID,
+			Timestamp: l.Timestamp,
+			Level:     string(l.Level),
+			RuleID:    l.RuleID,
+			RuleName:  l.RuleName,
+			Message:   l.Message,
+			Details:   l.Details,
+		}
+	}
+	return result
+}
+
+// GetLogsByRule returns log entries for a specific rule
+func (a *App) GetLogsByRule(ruleID string) []LogEntry {
+	if a.useIPC {
+		// TODO: implement IPC call
+		return []LogEntry{}
+	}
+	if a.engine == nil {
+		return []LogEntry{}
+	}
+
+	logs := a.engine.GetLogsByRule(ruleID)
+	result := make([]LogEntry, len(logs))
+	for i, l := range logs {
+		result[i] = LogEntry{
+			ID:        l.ID,
+			Timestamp: l.Timestamp,
+			Level:     string(l.Level),
+			RuleID:    l.RuleID,
+			RuleName:  l.RuleName,
+			Message:   l.Message,
+			Details:   l.Details,
+		}
+	}
+	return result
+}
+
+// ClearLogs clears all log entries
+func (a *App) ClearLogs() {
+	if a.useIPC {
+		// TODO: implement IPC call
+		return
+	}
+	if a.engine != nil {
+		a.engine.ClearLogs()
 	}
 }

@@ -23,6 +23,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/ProxyChain.vue')
   },
   {
+    path: '/logs',
+    name: 'Logs',
+    component: () => import('../views/Logs.vue')
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('../views/Settings.vue')

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Rule, Chain, AppConfig, ServiceStatus } from '../types'
+import type { Rule, Chain, AppConfig, ServiceStatus, RuleStats, LogEntry } from '../types'
 import {
   GetRules,
   GetChains,
@@ -22,7 +22,11 @@ import {
   UninstallService,
   StartService,
   StopService,
-  RestartService
+  RestartService,
+  GetAllRuleStats,
+  GetLogs,
+  GetLogsSince,
+  ClearLogs
 } from '../../wailsjs/go/main/App'
 
 export const useRulesStore = defineStore('rules', () => {
@@ -34,6 +38,9 @@ export const useRulesStore = defineStore('rules', () => {
   const serviceStatus = ref<string>('not_installed')
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const ruleStats = ref<Record<string, RuleStats>>({})
+  const logs = ref<LogEntry[]>([])
+  const lastLogId = ref<number>(0)
 
   // Getters
   const runningRules = computed(() => rules.value.filter(r => r.status === 'running'))
@@ -311,6 +318,60 @@ export const useRulesStore = defineStore('rules', () => {
     }
   }
 
+  // Statistics methods
+  async function fetchStats() {
+    try {
+      const data = await GetAllRuleStats()
+      ruleStats.value = data || {}
+    } catch (e: any) {
+      console.error('Failed to fetch stats:', e)
+    }
+  }
+
+  function getStatsForRule(ruleId: string): RuleStats | null {
+    return ruleStats.value[ruleId] || null
+  }
+
+  // Log methods
+  async function fetchLogs(count: number = 100) {
+    try {
+      const data = await GetLogs(count)
+      logs.value = (data || []) as LogEntry[]
+      if (logs.value.length > 0) {
+        lastLogId.value = logs.value[logs.value.length - 1].id
+      }
+    } catch (e: any) {
+      console.error('Failed to fetch logs:', e)
+    }
+  }
+
+  async function fetchNewLogs() {
+    try {
+      const data = await GetLogsSince(lastLogId.value)
+      const newLogs = (data || []) as LogEntry[]
+      if (newLogs.length > 0) {
+        logs.value = [...logs.value, ...newLogs]
+        lastLogId.value = newLogs[newLogs.length - 1].id
+        // Keep only the last 1000 logs
+        if (logs.value.length > 1000) {
+          logs.value = logs.value.slice(-1000)
+        }
+      }
+    } catch (e: any) {
+      console.error('Failed to fetch new logs:', e)
+    }
+  }
+
+  async function clearAllLogs() {
+    try {
+      await ClearLogs()
+      logs.value = []
+      lastLogId.value = 0
+    } catch (e: any) {
+      console.error('Failed to clear logs:', e)
+    }
+  }
+
   // Initialize
   async function init() {
     await Promise.all([
@@ -318,7 +379,9 @@ export const useRulesStore = defineStore('rules', () => {
       fetchChains(),
       fetchConfig(),
       fetchStatus(),
-      fetchServiceStatus()
+      fetchServiceStatus(),
+      fetchStats(),
+      fetchLogs()
     ])
   }
 
@@ -331,6 +394,8 @@ export const useRulesStore = defineStore('rules', () => {
     serviceStatus,
     loading,
     error,
+    ruleStats,
+    logs,
     // Getters
     runningRules,
     stoppedRules,
@@ -362,6 +427,11 @@ export const useRulesStore = defineStore('rules', () => {
     startService,
     stopService,
     restartService,
+    fetchStats,
+    getStatsForRule,
+    fetchLogs,
+    fetchNewLogs,
+    clearAllLogs,
     init
   }
 })

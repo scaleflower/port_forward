@@ -2,7 +2,6 @@
 export type RuleType = 'forward' | 'reverse' | 'chain'
 export type RuleStatus = 'stopped' | 'running' | 'error'
 export type Protocol = 'tcp' | 'udp' | 'http' | 'https' | 'socks5' | 'ss'
-export type Environment = 'TRUNK' | 'PRE-PROD' | 'PRODUCTION' | 'CUSTOM'
 
 export interface Target {
   host: string
@@ -27,7 +26,6 @@ export interface TLSConfig {
 export interface Rule {
   id: string
   name: string                 // 用途
-  environment: Environment     // 环境
   type: string
   enabled: boolean
   localPort: number            // 本地映射端口
@@ -93,7 +91,6 @@ export interface ServiceStatus {
 // Form types
 export interface RuleForm {
   name: string                 // 用途
-  environment: Environment     // 环境
   type: RuleType
   localPort: number            // 本地映射端口
   protocol: Protocol
@@ -113,4 +110,28 @@ export interface ChainForm {
   name: string
   hops: Hop[]
   description: string
+}
+
+// Statistics types
+export interface RuleStats {
+  ruleId: string
+  bytesIn: number
+  bytesOut: number
+  connections: number
+  activeConns: number
+  errors: number
+  lastActivity?: string
+}
+
+// Log types
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
+
+export interface LogEntry {
+  id: number
+  timestamp: string
+  level: LogLevel
+  ruleId?: string
+  ruleName?: string
+  message: string
+  details?: string
 }

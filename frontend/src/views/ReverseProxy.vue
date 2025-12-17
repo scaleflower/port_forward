@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRulesStore } from '../stores/rules'
-import type { Rule, Environment } from '../types'
+import type { Rule } from '../types'
 
 const store = useRulesStore()
 
@@ -11,7 +11,6 @@ const isEdit = ref(false)
 const currentRule = ref<Rule | null>(null)
 
 const form = ref({
-  environment: 'CUSTOM' as Environment,
   name: '',
   targetHost: '',
   targetPort: 0,
@@ -22,33 +21,10 @@ const form = ref({
 
 const rules = computed(() => store.reverseRules)
 
-// Environment options
-const environmentOptions = [
-  { value: 'TRUNK', label: 'TRUNK' },
-  { value: 'PRE-PROD', label: 'PRE-PROD' },
-  { value: 'PRODUCTION', label: 'PRODUCTION' },
-  { value: 'CUSTOM', label: 'CUSTOM' }
-]
-
-// Environment tag type mapping
-function getEnvTagType(env: string): '' | 'success' | 'warning' | 'danger' | 'info' {
-  switch (env) {
-    case 'TRUNK':
-      return 'info'
-    case 'PRE-PROD':
-      return 'warning'
-    case 'PRODUCTION':
-      return 'danger'
-    default:
-      return ''
-  }
-}
-
 function openCreateDialog() {
   isEdit.value = false
   currentRule.value = null
   form.value = {
-    environment: 'CUSTOM',
     name: '',
     targetHost: '',
     targetPort: 80,
@@ -63,7 +39,6 @@ function openEditDialog(rule: Rule) {
   isEdit.value = true
   currentRule.value = rule
   form.value = {
-    environment: rule.environment || 'CUSTOM',
     name: rule.name,
     targetHost: rule.targetHost || '',
     targetPort: rule.targetPort || 80,
@@ -96,7 +71,6 @@ async function saveRule() {
     if (isEdit.value && currentRule.value) {
       const updatedRule: Rule = {
         ...currentRule.value,
-        environment: form.value.environment,
         name: form.value.name,
         targetHost: form.value.targetHost,
         targetPort: form.value.targetPort,
@@ -109,7 +83,6 @@ async function saveRule() {
     } else {
       const newRule = await store.createNewRule(form.value.name, 'reverse')
       if (newRule) {
-        newRule.environment = form.value.environment
         newRule.targetHost = form.value.targetHost
         newRule.targetPort = form.value.targetPort
         newRule.localPort = form.value.localPort
@@ -166,40 +139,34 @@ async function toggleRule(rule: Rule) {
       </template>
 
       <el-table :data="rules" style="width: 100%" v-loading="store.loading">
-        <el-table-column prop="environment" label="Environment" width="120">
+        <el-table-column prop="name" label="Purpose" min-width="140" />
+        <el-table-column label="Backend" min-width="160">
           <template #default="{ row }">
-            <el-tag :type="getEnvTagType(row.environment)" size="small">
-              {{ row.environment || 'CUSTOM' }}
-            </el-tag>
+            <code class="target-addr">{{ row.targetHost }}:{{ row.targetPort }}</code>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="Purpose" min-width="150" />
-        <el-table-column label="Backend" min-width="200">
-          <template #default="{ row }">
-            <span>{{ row.targetHost }}:{{ row.targetPort }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="localPort" label="Listen Port" width="110">
+        <el-table-column prop="localPort" label="Listen Port" width="100" align="center">
           <template #default="{ row }">
             <el-tag size="small" type="info">:{{ row.localPort }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="protocol" label="Protocol" width="80">
+        <el-table-column prop="protocol" label="Protocol" width="85" align="center">
           <template #default="{ row }">
             <el-tag size="small" type="success">{{ row.protocol?.toUpperCase() }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="Status" width="100">
+        <el-table-column prop="status" label="Status" width="85" align="center">
           <template #default="{ row }">
             <el-tag
+              size="small"
               :type="row.status === 'running' ? 'success' : row.status === 'error' ? 'danger' : 'info'"
             >
               {{ row.status === 'running' ? 'Running' : row.status === 'error' ? 'Error' : 'Stopped' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="remark" label="Remark" min-width="120" show-overflow-tooltip />
-        <el-table-column label="Actions" width="200" fixed="right">
+        <el-table-column prop="remark" label="Remark" min-width="100" show-overflow-tooltip />
+        <el-table-column label="Actions" width="180" fixed="right" align="center">
           <template #default="{ row }">
             <el-button-group>
               <el-button
@@ -228,16 +195,6 @@ async function toggleRule(rule: Rule) {
       width="550px"
     >
       <el-form :model="form" label-width="120px">
-        <el-form-item label="Environment" required>
-          <el-select v-model="form.environment" style="width: 100%">
-            <el-option
-              v-for="opt in environmentOptions"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-        </el-form-item>
         <el-form-item label="Purpose" required>
           <el-input v-model="form.name" placeholder="e.g., Web Application" />
         </el-form-item>
@@ -286,6 +243,15 @@ async function toggleRule(rule: Rule) {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.target-addr {
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 13px;
+  color: #606266;
+  background: #f5f7fa;
+  padding: 2px 6px;
+  border-radius: 3px;
 }
 
 .form-tip {

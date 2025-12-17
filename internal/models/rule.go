@@ -37,22 +37,11 @@ const (
 	ProtocolSS     Protocol = "ss" // Shadowsocks
 )
 
-// Environment represents the deployment environment
-type Environment string
-
-const (
-	EnvTrunk      Environment = "TRUNK"
-	EnvPreProd    Environment = "PRE-PROD"
-	EnvProduction Environment = "PRODUCTION"
-	EnvCustom     Environment = "CUSTOM"
-)
-
 // Rule represents a forwarding rule
 type Rule struct {
-	ID          string      `json:"id"`
-	Name        string      `json:"name"`        // 用途
-	Environment Environment `json:"environment"` // 环境
-	Type        RuleType    `json:"type"`
+	ID   string   `json:"id"`
+	Name string   `json:"name"` // 用途
+	Type RuleType `json:"type"`
 	Enabled     bool        `json:"enabled"`
 	LocalPort   int         `json:"localPort"`   // 本地映射端口
 	Protocol    Protocol    `json:"protocol"`
@@ -97,16 +86,15 @@ type TLSConfig struct {
 func NewRule(name string, ruleType RuleType) *Rule {
 	now := time.Now()
 	return &Rule{
-		ID:          uuid.New().String(),
-		Name:        name,
-		Type:        ruleType,
-		Environment: EnvCustom,
-		Enabled:     false,
-		Protocol:    ProtocolTCP,
-		Targets:     []Target{},
-		Status:      RuleStatusStopped,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:        uuid.New().String(),
+		Name:      name,
+		Type:      ruleType,
+		Enabled:   false,
+		Protocol:  ProtocolTCP,
+		Targets:   []Target{},
+		Status:    RuleStatusStopped,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 }
 

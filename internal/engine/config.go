@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/go-gost/x/config"
 	"pfm/internal/models"
@@ -40,15 +42,29 @@ func RuleToGostConfig(rule *models.Rule, chains []*models.Chain) (*config.Config
 		}
 	}
 
+	// Debug: print full config JSON
+	if cfgJSON, err := json.MarshalIndent(cfg, "", "  "); err == nil {
+		log.Printf("[Config] Full gost config for rule %s:\n%s", rule.ID, string(cfgJSON))
+	}
+
 	return cfg, nil
 }
 
 // buildServiceConfig creates a gost service configuration from a rule
 func buildServiceConfig(rule *models.Rule) (*config.ServiceConfig, error) {
 	svc := &config.ServiceConfig{
-		Name: rule.ID,
-		Addr: rule.GetListenAddr(),
+		Name:     rule.ID,
+		Addr:     rule.GetListenAddr(),
+		Observer: observerName, // Use our stats observer
+		Metadata: map[string]any{
+			"enableStats":     true, // Enable statistics tracking for observer
+			"observer.period": "3s", // Report stats every 3 seconds
+		},
 	}
+
+	// Debug: log the service config
+	log.Printf("[Config] Building service config for rule %s: Observer=%s, enableStats=%v",
+		rule.ID, svc.Observer, svc.Metadata["enableStats"])
 
 	// Configure handler based on rule type
 	switch rule.Type {
@@ -83,6 +99,7 @@ func buildServiceConfig(rule *models.Rule) (*config.ServiceConfig, error) {
 }
 
 // buildForwardHandler creates a local forward handler configuration
+// Note: forward/tcp handler doesn't support observer, stats are tracked at listener level
 func buildForwardHandler(rule *models.Rule) *config.HandlerConfig {
 	handlerType := "tcp"
 	switch rule.Protocol {
@@ -121,7 +138,8 @@ func buildProxyHandler(rule *models.Rule) *config.HandlerConfig {
 	}
 
 	return &config.HandlerConfig{
-		Type: handlerType,
+		Type:     handlerType,
+		Observer: observerName, // Handler-level observer for request stats
 	}
 }
 

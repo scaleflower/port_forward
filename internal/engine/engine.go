@@ -2,22 +2,39 @@ package engine
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"sync"
+	"time"
 
+	"github.com/go-gost/core/observer/stats"
 	"github.com/go-gost/core/service"
 	"github.com/go-gost/x/config/loader"
 	"github.com/go-gost/x/registry"
+	xservice "github.com/go-gost/x/service"
 	"pfm/internal/models"
+)
+
+// Statuser is an interface for accessing gost service status
+type Statuser interface {
+	Status() *xservice.Status
+}
+
+const (
+	// observerName is the name used to register our stats observer
+	observerName = "pfm-stats-observer"
 )
 
 // Engine manages gost services for port forwarding
 type Engine struct {
-	mu       sync.RWMutex
-	services map[string]*serviceEntry
-	chains   []*models.Chain
-	logger   *log.Logger
+	mu         sync.RWMutex
+	services   map[string]*serviceEntry
+	chains     []*models.Chain
+	logger     *log.Logger
+	stats      *StatsTracker
+	logMgr     *LogManager
+	observer   *StatsObserver
+	pollCtx    context.Context
+	pollCancel context.CancelFunc
 }
 
 // serviceEntry holds a running service and its metadata
@@ -29,11 +46,42 @@ type serviceEntry struct {
 
 // New creates a new Engine instance
 func New() *Engine {
-	return &Engine{
-		services: make(map[string]*serviceEntry),
-		chains:   []*models.Chain{},
-		logger:   log.Default(),
+	ctx, cancel := context.WithCancel(context.Background())
+
+	e := &Engine{
+		services:   make(map[string]*serviceEntry),
+		chains:     []*models.Chain{},
+		logger:     log.Default(),
+		stats:      NewStatsTracker(),
+		logMgr:     NewLogManager(1000),
+		observer:   NewStatsObserver(),
+		pollCtx:    ctx,
+		pollCancel: cancel,
 	}
+
+	// Set up observer callback to sync with StatsTracker
+	e.observer.SetOnUpdate(func(serviceName string, stats *ServiceStats) {
+		e.stats.UpdateFromObserver(serviceName, stats)
+	})
+
+	// Register our observer with gost registry
+	if err := registry.ObserverRegistry().Register(observerName, e.observer); err != nil {
+		log.Printf("[Engine] Failed to register observer: %v", err)
+	} else {
+		log.Printf("[Engine] Observer '%s' registered successfully", observerName)
+	}
+
+	// Verify registration
+	if obs := registry.ObserverRegistry().Get(observerName); obs != nil {
+		log.Printf("[Engine] Observer '%s' verified in registry", observerName)
+	} else {
+		log.Printf("[Engine] WARNING: Observer '%s' NOT found in registry!", observerName)
+	}
+
+	// Start polling goroutine to collect stats from gost services
+	go e.pollStats()
+
+	return e
 }
 
 // SetLogger sets the logger for the engine
@@ -46,6 +94,16 @@ func (e *Engine) SetChains(chains []*models.Chain) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.chains = chains
+}
+
+// GetStats returns the stats tracker
+func (e *Engine) GetStats() *StatsTracker {
+	return e.stats
+}
+
+// GetLogManager returns the log manager
+func (e *Engine) GetLogManager() *LogManager {
+	return e.logMgr
 }
 
 // StartRule starts a forwarding rule
@@ -66,6 +124,7 @@ func (e *Engine) StartRule(rule *models.Rule) error {
 	// Convert rule to gost config
 	cfg, err := RuleToGostConfig(rule, e.chains)
 	if err != nil {
+		e.logMgr.Error(rule.ID, rule.Name, "配置构建失败", err.Error())
 		return &models.EngineError{
 			RuleID:  rule.ID,
 			Op:      "config",
@@ -76,6 +135,7 @@ func (e *Engine) StartRule(rule *models.Rule) error {
 
 	// Load the configuration
 	if err := loader.Load(cfg); err != nil {
+		e.logMgr.Error(rule.ID, rule.Name, "配置加载失败", err.Error())
 		return &models.EngineError{
 			RuleID:  rule.ID,
 			Op:      "load",
@@ -84,9 +144,25 @@ func (e *Engine) StartRule(rule *models.Rule) error {
 		}
 	}
 
+	// Debug: verify observer is still in registry after loader.Load
+	if obs := registry.ObserverRegistry().Get(observerName); obs != nil {
+		log.Printf("[Engine] After loader.Load: Observer '%s' still in registry (type: %T)", observerName, obs)
+	} else {
+		log.Printf("[Engine] WARNING: After loader.Load: Observer '%s' NOT found in registry!", observerName)
+	}
+
+	// Debug: list all registered observers
+	log.Printf("[Engine] Listing all registered observers...")
+	for _, name := range []string{observerName, "default", "stats"} {
+		if o := registry.ObserverRegistry().Get(name); o != nil {
+			log.Printf("[Engine]   - Observer '%s' found: %T", name, o)
+		}
+	}
+
 	// Get the registered service
 	svc := registry.ServiceRegistry().Get(rule.ID)
 	if svc == nil {
+		e.logMgr.Error(rule.ID, rule.Name, "服务未找到")
 		return &models.EngineError{
 			RuleID:  rule.ID,
 			Op:      "registry",
@@ -97,12 +173,18 @@ func (e *Engine) StartRule(rule *models.Rule) error {
 	// Create context for the service
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Initialize stats for this rule
+	e.stats.InitRule(rule.ID)
+
 	// Store the service entry
 	e.services[rule.ID] = &serviceEntry{
 		service: svc,
 		rule:    rule.Clone(),
 		cancel:  cancel,
 	}
+
+	// Log service start
+	e.logMgr.LogServiceStart(rule.ID, rule.Name, rule.GetListenAddr())
 
 	// Start the service in a goroutine
 	go func() {
@@ -113,6 +195,8 @@ func (e *Engine) StartRule(rule *models.Rule) error {
 				// Service was stopped intentionally
 			default:
 				e.logger.Printf("[Engine] Service error: %s - %v", rule.ID, err)
+				e.logMgr.LogError(rule.ID, rule.Name, err)
+				e.stats.IncrementErrors(rule.ID)
 			}
 		}
 	}()
@@ -130,7 +214,13 @@ func (e *Engine) StopRule(id string) error {
 		return models.ErrServiceNotRunning
 	}
 
+	ruleName := ""
+	if entry.rule != nil {
+		ruleName = entry.rule.Name
+	}
+
 	e.logger.Printf("[Engine] Stopping service: %s", id)
+	e.logMgr.LogServiceStop(id, ruleName)
 
 	// Cancel the context
 	if entry.cancel != nil {
@@ -144,6 +234,9 @@ func (e *Engine) StopRule(id string) error {
 
 	// Unregister from registry
 	registry.ServiceRegistry().Unregister(id)
+
+	// Remove stats (keep them for history view)
+	// e.stats.RemoveRule(id)
 
 	// Remove from map
 	delete(e.services, id)
@@ -162,10 +255,16 @@ func (e *Engine) RestartRule(rule *models.Rule) error {
 
 // StopAll stops all running services
 func (e *Engine) StopAll() {
+	// Stop the stats polling goroutine
+	if e.pollCancel != nil {
+		e.pollCancel()
+	}
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	e.logger.Printf("[Engine] Stopping all services...")
+	e.logMgr.Info("", "", "停止所有服务")
 
 	for id, entry := range e.services {
 		if entry.cancel != nil {
@@ -212,7 +311,7 @@ func (e *Engine) GetStatus() map[string]*models.ServiceStatus {
 			RulesActive: len(e.services),
 		}
 		if entry.rule != nil {
-			status[id].Version = fmt.Sprintf("Rule: %s", entry.rule.Name)
+			status[id].Version = entry.rule.Name
 		}
 	}
 	return status
@@ -223,4 +322,120 @@ func (e *Engine) GetRunningCount() int {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return len(e.services)
+}
+
+// GetRuleStats returns statistics for a specific rule
+func (e *Engine) GetRuleStats(ruleID string) *models.RuleStats {
+	return e.stats.GetStats(ruleID)
+}
+
+// GetAllRuleStats returns statistics for all rules
+func (e *Engine) GetAllRuleStats() map[string]*models.RuleStats {
+	return e.stats.GetAllStats()
+}
+
+// GetLogs returns recent log entries
+func (e *Engine) GetLogs(count int) []LogEntry {
+	return e.logMgr.GetRecent(count)
+}
+
+// GetLogsSince returns log entries since a specific ID
+func (e *Engine) GetLogsSince(sinceID int64) []LogEntry {
+	return e.logMgr.GetSince(sinceID)
+}
+
+// GetLogsByRule returns log entries for a specific rule
+func (e *Engine) GetLogsByRule(ruleID string) []LogEntry {
+	return e.logMgr.GetByRule(ruleID)
+}
+
+// ClearLogs clears all log entries
+func (e *Engine) ClearLogs() {
+	e.logMgr.Clear()
+}
+
+// AddTrafficIn adds incoming traffic stats for a rule
+func (e *Engine) AddTrafficIn(ruleID string, bytes int64) {
+	e.stats.AddBytesIn(ruleID, bytes)
+}
+
+// AddTrafficOut adds outgoing traffic stats for a rule
+func (e *Engine) AddTrafficOut(ruleID string, bytes int64) {
+	e.stats.AddBytesOut(ruleID, bytes)
+}
+
+// IncrementConnections increments the connection count for a rule
+func (e *Engine) IncrementConnections(ruleID string) {
+	e.stats.IncrementConnections(ruleID)
+}
+
+// DecrementActiveConnections decrements the active connection count
+func (e *Engine) DecrementActiveConnections(ruleID string) {
+	e.stats.DecrementActiveConnections(ruleID)
+}
+
+// pollStats periodically polls gost services for statistics
+func (e *Engine) pollStats() {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	log.Printf("[Engine] Stats polling started (every 2s)")
+
+	for {
+		select {
+		case <-e.pollCtx.Done():
+			log.Printf("[Engine] Stats polling stopped")
+			return
+		case <-ticker.C:
+			e.collectStats()
+		}
+	}
+}
+
+// collectStats collects statistics from all running gost services
+func (e *Engine) collectStats() {
+	e.mu.RLock()
+	serviceIDs := make([]string, 0, len(e.services))
+	for id := range e.services {
+		serviceIDs = append(serviceIDs, id)
+	}
+	e.mu.RUnlock()
+
+	for _, id := range serviceIDs {
+		svc := registry.ServiceRegistry().Get(id)
+		if svc == nil {
+			continue
+		}
+
+		// Type assert to access Status() method
+		if statuser, ok := svc.(Statuser); ok {
+			status := statuser.Status()
+			if status != nil {
+				st := status.Stats()
+				if st != nil {
+					// Get stats values from gost Stats interface
+					bytesIn := st.Get(stats.KindInputBytes)
+					bytesOut := st.Get(stats.KindOutputBytes)
+					totalConns := st.Get(stats.KindTotalConns)
+					currentConns := st.Get(stats.KindCurrentConns)
+					totalErrs := st.Get(stats.KindTotalErrs)
+
+					// Update our stats tracker with cumulative values
+					e.stats.UpdateFromObserver(id, &ServiceStats{
+						InputBytes:   bytesIn,
+						OutputBytes:  bytesOut,
+						TotalConns:   totalConns,
+						CurrentConns: currentConns,
+						TotalErrs:    totalErrs,
+					})
+
+					// Debug log for first few updates to verify it's working
+					if bytesIn > 0 || bytesOut > 0 {
+						log.Printf("[Engine] Stats for %s: In=%d, Out=%d, Conns=%d/%d, Errs=%d",
+							id, bytesIn, bytesOut, currentConns, totalConns, totalErrs)
+					}
+				}
+			}
+		}
+	}
 }

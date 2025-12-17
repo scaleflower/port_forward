@@ -12,6 +12,7 @@ const menuItems = [
   { path: '/forward', icon: 'Switch', title: '端口转发' },
   { path: '/reverse', icon: 'RefreshRight', title: '反向代理' },
   { path: '/chains', icon: 'Connection', title: '代理链' },
+  { path: '/logs', icon: 'Document', title: '日志' },
   { path: '/settings', icon: 'Setting', title: '设置' }
 ]
 

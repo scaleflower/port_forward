@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRulesStore } from '../stores/rules'
-import type { Rule, Chain, Hop, Environment } from '../types'
+import type { Rule, Chain, Hop } from '../types'
 
 const store = useRulesStore()
 
@@ -23,7 +23,6 @@ const isRuleEdit = ref(false)
 const currentRule = ref<Rule | null>(null)
 
 const ruleForm = ref({
-  environment: 'CUSTOM' as Environment,
   name: '',
   localPort: 0,
   protocol: 'tcp' as const,
@@ -138,7 +137,6 @@ function openCreateRuleDialog() {
   isRuleEdit.value = false
   currentRule.value = null
   ruleForm.value = {
-    environment: 'CUSTOM',
     name: '',
     localPort: 0,
     protocol: 'tcp',
@@ -155,7 +153,6 @@ function openEditRuleDialog(rule: Rule) {
   isRuleEdit.value = true
   currentRule.value = rule
   ruleForm.value = {
-    environment: rule.environment || 'CUSTOM',
     name: rule.name,
     localPort: rule.localPort || 0,
     protocol: rule.protocol as any,
@@ -196,7 +193,6 @@ async function saveRule() {
     if (isRuleEdit.value && currentRule.value) {
       const updatedRule: Rule = {
         ...currentRule.value,
-        environment: ruleForm.value.environment,
         name: ruleForm.value.name,
         localPort: ruleForm.value.localPort,
         protocol: ruleForm.value.protocol,
@@ -211,7 +207,6 @@ async function saveRule() {
     } else {
       const newRule = await store.createNewRule(ruleForm.value.name, 'chain')
       if (newRule) {
-        newRule.environment = ruleForm.value.environment
         newRule.localPort = ruleForm.value.localPort
         newRule.protocol = ruleForm.value.protocol
         newRule.targetHost = ruleForm.value.targetHost
@@ -270,27 +265,6 @@ function getChainName(chainId?: string): string {
   if (!chainId) return ''
   const chain = chains.value.find(c => c.id === chainId)
   return chain?.name || ''
-}
-
-// Environment options
-const environmentOptions = [
-  { value: 'TRUNK', label: 'TRUNK' },
-  { value: 'PRE-PROD', label: 'PRE-PROD' },
-  { value: 'PRODUCTION', label: 'PRODUCTION' },
-  { value: 'CUSTOM', label: 'CUSTOM' }
-]
-
-function getEnvTagType(env: string): '' | 'success' | 'warning' | 'danger' | 'info' {
-  switch (env) {
-    case 'TRUNK':
-      return 'info'
-    case 'PRE-PROD':
-      return 'warning'
-    case 'PRODUCTION':
-      return 'danger'
-    default:
-      return ''
-  }
 }
 </script>
 
@@ -374,30 +348,23 @@ function getEnvTagType(env: string): '' | 'success' | 'warning' | 'danger' | 'in
       </template>
 
       <el-table :data="chainRules" style="width: 100%" v-loading="store.loading">
-        <el-table-column prop="environment" label="Env" width="100">
-          <template #default="{ row }">
-            <el-tag :type="getEnvTagType(row.environment)" size="small">
-              {{ row.environment || 'CUSTOM' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="name" label="Name" min-width="150" />
-        <el-table-column prop="protocol" label="Protocol" width="80">
+        <el-table-column prop="name" label="Name" min-width="120" />
+        <el-table-column prop="protocol" label="Protocol" width="85" align="center">
           <template #default="{ row }">
             <el-tag size="small">{{ row.protocol?.toUpperCase() }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="localPort" label="Local Port" width="100">
+        <el-table-column prop="localPort" label="Local Port" width="100" align="center">
           <template #default="{ row }">
             <el-tag size="small" type="info">:{{ row.localPort }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="Target" min-width="180">
+        <el-table-column label="Target" min-width="160">
           <template #default="{ row }">
-            <span>{{ row.targetHost }}:{{ row.targetPort }}</span>
+            <code class="target-addr">{{ row.targetHost }}:{{ row.targetPort }}</code>
           </template>
         </el-table-column>
-        <el-table-column label="Chain" width="120">
+        <el-table-column label="Chain" width="110" align="center">
           <template #default="{ row }">
             <el-tag v-if="row.chainId" type="warning" size="small">
               {{ getChainName(row.chainId) }}
@@ -405,16 +372,17 @@ function getEnvTagType(env: string): '' | 'success' | 'warning' | 'danger' | 'in
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="Status" width="100">
+        <el-table-column prop="status" label="Status" width="85" align="center">
           <template #default="{ row }">
             <el-tag
+              size="small"
               :type="row.status === 'running' ? 'success' : row.status === 'error' ? 'danger' : 'info'"
             >
               {{ row.status === 'running' ? 'Running' : row.status === 'error' ? 'Error' : 'Stopped' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="Actions" width="200" fixed="right">
+        <el-table-column label="Actions" width="180" fixed="right" align="center">
           <template #default="{ row }">
             <el-button-group>
               <el-button
@@ -490,16 +458,6 @@ function getEnvTagType(env: string): '' | 'success' | 'warning' | 'danger' | 'in
       width="550px"
     >
       <el-form :model="ruleForm" label-width="110px">
-        <el-form-item label="Environment" required>
-          <el-select v-model="ruleForm.environment" style="width: 100%">
-            <el-option
-              v-for="opt in environmentOptions"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-        </el-form-item>
         <el-form-item label="Name" required>
           <el-input v-model="ruleForm.name" placeholder="Rule name" />
         </el-form-item>
@@ -563,6 +521,15 @@ function getEnvTagType(env: string): '' | 'success' | 'warning' | 'danger' | 'in
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.target-addr {
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 13px;
+  color: #606266;
+  background: #f5f7fa;
+  padding: 2px 6px;
+  border-radius: 3px;
 }
 
 .chains-grid {

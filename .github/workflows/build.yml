@@ -1,15 +1,17 @@
-name: Build
+name: Build Multi-Platform
 
 on:
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
+    branches: [ main, master ]
+    tags:
+      - 'v*'
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
+  workflow_dispatch:
 
 env:
-  GO_VERSION: '1.21'
-  NODE_VERSION: '20'
+  GO_VERSION: '1.24'
+  NODE_VERSION: '18'
 
 jobs:
   build:
@@ -17,18 +19,33 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            platform: darwin/universal
-            output: pfm.app
-            artifact: pfm-macos
+          # Windows
           - os: windows-latest
             platform: windows/amd64
-            output: pfm.exe
+            output: pfm-windows-amd64.exe
             artifact: pfm-windows-amd64
+          - os: windows-latest
+            platform: windows/386
+            output: pfm-windows-386.exe
+            artifact: pfm-windows-386
+          # Linux
           - os: ubuntu-latest
             platform: linux/amd64
-            output: pfm
+            output: pfm-linux-amd64
             artifact: pfm-linux-amd64
+          - os: ubuntu-latest
+            platform: linux/386
+            output: pfm-linux-386
+            artifact: pfm-linux-386
+          # macOS
+          - os: macos-latest
+            platform: darwin/amd64
+            output: pfm-macos-intel.app
+            artifact: pfm-macos-intel
+          - os: macos-latest
+            platform: darwin/arm64
+            output: pfm-macos-apple-silicon.app
+            artifact: pfm-macos-apple-silicon
 
     runs-on: ${{ matrix.os }}
 
@@ -49,79 +66,88 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      # Linux dependencies
-      - name: Install Linux dependencies
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          # Ubuntu 24.04+ uses libwebkit2gtk-4.1-dev
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
-
-      # Install Wails CLI
-      - name: Install Wails
+      - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      # Install frontend dependencies
+      # Linux dependencies
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+
+      # Install 32-bit libraries for Linux 386 build
+      - name: Install Linux 386 dependencies
+        if: runner.os == 'Linux' && contains(matrix.platform, '386')
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib g++-multilib
+
+      # Windows dependencies for CGO
+      - name: Setup MSYS2 (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc mingw-w64-i686-gcc
+
       - name: Install frontend dependencies
         run: |
           cd frontend
           npm ci
 
-      # Build application
-      - name: Build (macOS)
-        if: matrix.os == 'macos-latest'
+      - name: Build application
+        shell: bash
         run: |
-          wails build -platform ${{ matrix.platform }}
-          # Create zip for macOS app bundle
+          if [[ "${{ matrix.platform }}" == "windows/386" ]]; then
+            export PATH="/c/msys64/mingw32/bin:$PATH"
+            export CC=i686-w64-mingw32-gcc
+            export CXX=i686-w64-mingw32-g++
+          elif [[ "${{ matrix.platform }}" == "windows/amd64" ]]; then
+            export PATH="/c/msys64/mingw64/bin:$PATH"
+          fi
+          wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }}
+
+      # Package artifacts
+      - name: Package Windows artifact
+        if: runner.os == 'Windows'
+        run: |
+          mkdir -p dist
+          cp build/bin/${{ matrix.output }} dist/
+        shell: bash
+
+      - name: Package Linux artifact
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          cp build/bin/${{ matrix.output }} dist/
+          chmod +x dist/${{ matrix.output }}
+
+      - name: Package macOS artifact
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
           cd build/bin
-          zip -r pfm-macos.zip pfm.app
+          zip -r ../../dist/${{ matrix.artifact }}.zip *.app
 
-      - name: Build (Windows)
-        if: matrix.os == 'windows-latest'
-        run: wails build -platform ${{ matrix.platform }}
-
-      - name: Build (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: wails build -platform ${{ matrix.platform }} -tags webkit2_41
-
-      # Upload artifacts
-      - name: Upload macOS artifact
-        if: matrix.os == 'macos-latest'
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: build/bin/pfm-macos.zip
+          path: dist/*
           retention-days: 30
 
-      - name: Upload Windows artifact
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: build/bin/${{ matrix.output }}
-          retention-days: 30
-
-      - name: Upload Linux artifact
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: build/bin/${{ matrix.output }}
-          retention-days: 30
-
-  # Create release when tag is pushed
+  # Create release when a tag is pushed
   release:
     needs: build
-    runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
-
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -130,28 +156,24 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release
-          # macOS
-          cp artifacts/pfm-macos/pfm-macos.zip release/
           # Windows
-          cd artifacts/pfm-windows-amd64
-          zip -r ../../release/pfm-windows-amd64.zip pfm.exe
-          cd ../..
+          cp artifacts/pfm-windows-amd64/pfm-windows-amd64.exe release/
+          cp artifacts/pfm-windows-386/pfm-windows-386.exe release/
           # Linux
-          cd artifacts/pfm-linux-amd64
-          tar -czvf ../../release/pfm-linux-amd64.tar.gz pfm
-          cd ../..
-          # Generate checksums
+          cp artifacts/pfm-linux-amd64/pfm-linux-amd64 release/
+          cp artifacts/pfm-linux-386/pfm-linux-386 release/
+          # macOS
+          cp artifacts/pfm-macos-intel/pfm-macos-intel.zip release/
+          cp artifacts/pfm-macos-apple-silicon/pfm-macos-apple-silicon.zip release/
+
+          # Create checksums
           cd release
           sha256sum * > checksums.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            release/pfm-macos.zip
-            release/pfm-windows-amd64.zip
-            release/pfm-linux-amd64.tar.gz
-            release/checksums.txt
+          files: release/*
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
