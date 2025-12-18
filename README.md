@@ -406,7 +406,7 @@ pfm rule create '{"name":"MySQL","type":"forward","protocol":"tcp","localPort":1
 | Platform | Location |
 |----------|----------|
 | macOS | `~/Library/Application Support/pfm/data.json` |
-| Windows | `%APPDATA%\pfm\data.json` |
+| Windows | `C:\ProgramData\pfm\data.json` |
 | Linux | `/var/lib/pfm/data.json` (service) or `~/.config/pfm/data.json` (user) |
 
 ### Export/Import

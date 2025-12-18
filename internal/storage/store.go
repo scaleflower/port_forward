@@ -26,17 +26,7 @@ func New() (*Store, error) {
 	if envDir := os.Getenv("PFM_DATA_DIR"); envDir != "" {
 		dataDir = envDir
 	} else {
-		// Get user config directory
-		configDir, err := os.UserConfigDir()
-		if err != nil {
-			// Fallback to home directory
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return nil, err
-			}
-			configDir = filepath.Join(home, ".config")
-		}
-		dataDir = filepath.Join(configDir, "pfm")
+		dataDir = getDefaultDataDir()
 	}
 
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
