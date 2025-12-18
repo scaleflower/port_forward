@@ -98,7 +98,11 @@ func handleService(args []string) error {
 			return fmt.Errorf("failed to install service: %w", err)
 		}
 		fmt.Println("Service installed successfully")
-		fmt.Println("The service will start automatically on system boot")
+		fmt.Println("Starting service...")
+		if err := daemon.Start(); err != nil {
+			return fmt.Errorf("service installed but failed to start: %w", err)
+		}
+		fmt.Println("Service started successfully")
 		return nil
 	case "uninstall":
 		fmt.Println("Uninstalling service...")

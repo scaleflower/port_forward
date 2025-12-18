@@ -363,9 +363,13 @@ func (a *App) IsServiceMode() bool {
 
 // ==================== Service Management ====================
 
-// InstallService installs the background service
+// InstallService installs and starts the background service
 func (a *App) InstallService() error {
-	return daemon.Install()
+	if err := daemon.Install(); err != nil {
+		return err
+	}
+	// Auto-start service after installation
+	return daemon.Start()
 }
 
 // UninstallService uninstalls the background service
