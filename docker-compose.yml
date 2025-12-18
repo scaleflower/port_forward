@@ -5,7 +5,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: pfm:latest
+    # Note: Image will be built locally from Dockerfile
+    # No pre-built image on Docker Hub
     container_name: pfm
     restart: unless-stopped
 

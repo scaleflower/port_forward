@@ -177,6 +177,8 @@ journalctl -u pfm -f           # View logs
 
 Docker provides the easiest deployment method with automatic container management.
 
+> **Note**: Images are built locally from source. No pre-built images are published to Docker Hub.
+
 #### Quick Start with Docker Compose (Recommended)
 
 ```bash
@@ -184,8 +186,8 @@ Docker provides the easiest deployment method with automatic container managemen
 git clone https://github.com/scaleflower/port_forward.git
 cd port_forward/pfm
 
-# Start with docker-compose
-docker-compose up -d
+# Build and start (first run will build the image)
+docker-compose up -d --build
 
 # View logs
 docker-compose logs -f
@@ -224,7 +226,9 @@ version: '3.8'
 
 services:
   pfm:
-    image: pfm:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: pfm
     restart: unless-stopped
 
