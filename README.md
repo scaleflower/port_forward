@@ -3,7 +3,7 @@
 A cross-platform port forwarding manager with GUI and CLI support, built on [gost](https://github.com/go-gost/x) core library.
 
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)
-![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)
+![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)
 ![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -45,7 +45,7 @@ A cross-platform port forwarding manager with GUI and CLI support, built on [gos
 
 ### Prerequisites
 
-- Go 1.21+
+- Go 1.24+
 - Node.js 18+ (for GUI builds)
 - [Wails CLI](https://wails.io/docs/gettingstarted/installation) (for GUI builds)
 
@@ -177,7 +177,7 @@ journalctl -u pfm -f           # View logs
 
 Docker provides the easiest deployment method with automatic container management.
 
-> **Note**: Images are built locally from source. No pre-built images are published to Docker Hub.
+[![Docker Image](https://img.shields.io/docker/v/kourenicz/pfm?label=Docker%20Hub)](https://hub.docker.com/r/kourenicz/pfm)
 
 #### Quick Start with Docker Compose (Recommended)
 
@@ -186,8 +186,8 @@ Docker provides the easiest deployment method with automatic container managemen
 git clone https://github.com/scaleflower/port_forward.git
 cd port_forward/pfm
 
-# Build and start (first run will build the image)
-docker-compose up -d --build
+# Start (pulls image from Docker Hub)
+docker-compose up -d
 
 # View logs
 docker-compose logs -f
@@ -196,12 +196,9 @@ docker-compose logs -f
 docker-compose down
 ```
 
-#### Build and Run with Docker
+#### Run with Docker
 
 ```bash
-# Build image
-docker build -t pfm:latest .
-
 # Run container (host network mode for port forwarding)
 docker run -d \
   --name pfm \
@@ -209,7 +206,11 @@ docker run -d \
   --restart unless-stopped \
   -v pfm-data:/data \
   -e TZ=Asia/Shanghai \
-  pfm:latest
+  kourenicz/pfm:latest
+
+# Or build from source
+docker build -t pfm:latest .
+docker run -d --name pfm --network host -v pfm-data:/data pfm:latest
 
 # View logs
 docker logs -f pfm
@@ -226,9 +227,7 @@ version: '3.8'
 
 services:
   pfm:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: kourenicz/pfm:latest
     container_name: pfm
     restart: unless-stopped
 

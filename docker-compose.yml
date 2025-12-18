@@ -2,11 +2,11 @@ version: '3.8'
 
 services:
   pfm:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    # Note: Image will be built locally from Dockerfile
-    # No pre-built image on Docker Hub
+    image: kourenicz/pfm:latest
+    # Or build locally:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
     container_name: pfm
     restart: unless-stopped
 
