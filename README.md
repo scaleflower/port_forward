@@ -1,6 +1,6 @@
 # Port Forward Manager (PFM)
 
-A cross-platform port forwarding manager with GUI, built on [gost](https://github.com/go-gost/x) core library.
+A cross-platform port forwarding manager with GUI and CLI support, built on [gost](https://github.com/go-gost/x) core library.
 
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)
 ![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)
@@ -15,37 +15,41 @@ A cross-platform port forwarding manager with GUI, built on [gost](https://githu
 - **Hot Reload**: Dynamic rule management without restart
 - **Environment Tags**: Organize rules by environment (TRUNK, PRE-PROD, PRODUCTION, CUSTOM)
 - **System Service**: Run as background service with auto-start
-- **Cross-Platform**: macOS, Windows, Linux support
+- **Global Hotkey**: Quick window toggle with customizable hotkey (default: Cmd+Shift+P)
+- **System Tray**: Menu bar/tray icon for quick access
+- **Cross-Platform**: macOS GUI, Windows GUI, Linux CLI
 
-## Screenshots
+## Platform Support
 
-The application provides a clean, intuitive interface for managing port forwarding rules:
-
-- Environment-based organization with color-coded tags
-- One-click rule enable/disable
-- Real-time status monitoring
+| Platform | Mode | Features |
+|----------|------|----------|
+| macOS | GUI + Service | Full GUI, system tray, global hotkey, LaunchDaemon |
+| Windows | GUI + Service | Full GUI, system tray, global hotkey, Windows Service |
+| Linux | CLI + Service | Command-line interface, systemd service |
 
 ## Tech Stack
 
 | Layer | Technology | Description |
 |-------|------------|-------------|
-| Core Engine | go-gost/x v0.8.1 | Full protocol support |
+| Core Engine | go-gost/x | Full protocol support |
 | GUI Framework | Wails v2 | Go + Web hybrid |
 | Frontend | Vue 3 + TypeScript | Component-based UI |
-| UI Components | Element Plus | Mature Vue 3 component library |
-| State Management | Pinia | Official Vue 3 state management |
-| Build Tool | Vite | Fast development experience |
+| UI Components | Element Plus | Vue 3 component library |
+| State Management | Pinia | Vue 3 state management |
+| Build Tool | Vite | Fast development |
+
+---
 
 ## Installation
 
 ### Prerequisites
 
 - Go 1.21+
-- Node.js 18+
-- [Wails CLI](https://wails.io/docs/gettingstarted/installation)
+- Node.js 18+ (for GUI builds)
+- [Wails CLI](https://wails.io/docs/gettingstarted/installation) (for GUI builds)
 
 ```bash
-# Install Wails CLI
+# Install Wails CLI (for GUI builds only)
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
 ```
 
@@ -54,111 +58,287 @@ go install github.com/wailsapp/wails/v2/cmd/wails@latest
 ```bash
 # Clone the repository
 git clone https://github.com/scaleflower/port_forward.git
-cd port_forward
+cd port_forward/pfm
 
 # Install frontend dependencies
 cd frontend && npm install && cd ..
-
-# Development mode
-wails dev
-
-# Production build
-wails build
 ```
 
-### Cross-Platform Build
+### Build Options
+
+| Platform | Command | Output |
+|----------|---------|--------|
+| macOS GUI (Apple Silicon) | `wails build -platform darwin/arm64` | `build/bin/pfm.app` |
+| macOS GUI (Intel) | `wails build -platform darwin/amd64` | `build/bin/pfm.app` |
+| Windows GUI | `wails build -platform windows/amd64` | `build/bin/pfm.exe` |
+| Linux CLI | `GOOS=linux GOARCH=amd64 go build -tags nogui -o pfm .` | `pfm` |
+
+---
+
+## Deployment
+
+### macOS (GUI Mode)
+
+1. **Build the application**:
+   ```bash
+   wails build -platform darwin/arm64
+   ```
+
+2. **Run the app**:
+   - Double-click `build/bin/pfm.app`
+   - Or copy to `/Applications/` for permanent installation
+
+3. **Install as system service** (optional):
+   - Open the app → Settings → Service Management → Install Service
+   - Service auto-starts on boot and keeps running in background
+   - Only authorization needed during installation (not every startup)
+
+4. **Global Hotkey**:
+   - Default: `Cmd + Shift + P` to show/hide window
+   - Requires Accessibility permission: System Settings → Privacy & Security → Accessibility
+
+### Windows (GUI Mode)
+
+1. **Build the application**:
+   ```bash
+   wails build -platform windows/amd64
+   ```
+
+2. **Run the app**:
+   - Double-click `build/bin/pfm.exe`
+
+3. **Install as system service**:
+   - Open the app → Settings → Service Management → Install Service
+
+### Linux (CLI Mode)
+
+Linux uses a headless CLI-only version, perfect for servers without X Window.
+
+#### Quick Install
 
 ```bash
-# macOS (Apple Silicon)
-wails build -platform darwin/arm64
+# 1. Build on your dev machine
+GOOS=linux GOARCH=amd64 go build -tags nogui -o pfm .
 
-# macOS (Intel)
-wails build -platform darwin/amd64
+# 2. Copy to Linux server
+scp pfm scripts/install-linux.sh user@server:/tmp/
 
-# Windows
-wails build -platform windows/amd64
-
-# Linux
-wails build -platform linux/amd64
+# 3. Install on server
+ssh user@server
+cd /tmp
+chmod +x install-linux.sh
+sudo ./install-linux.sh
 ```
 
-## Usage
+#### Manual Install
 
-### Port Forwarding
+```bash
+# Copy binary
+sudo cp pfm /usr/local/bin/
+sudo chmod +x /usr/local/bin/pfm
 
-Create a port forwarding rule to map a local port to a remote target:
+# Create systemd service
+sudo tee /etc/systemd/system/pfm.service << 'EOF'
+[Unit]
+Description=Port Forward Manager Service
+After=network.target
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| Environment | Rule category | PRODUCTION |
-| Purpose | Rule name/description | MySQL Database |
-| Target Host | Remote IP or hostname | 192.168.1.100 |
-| Target Port | Remote port | 3306 |
-| Local Port | Local listening port | 13306 |
-| Protocol | TCP or UDP | TCP |
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/pfm service run
+Restart=always
+RestartSec=5
+User=root
+Environment=HOME=/var/lib/pfm
 
-Access the forwarded service via `localhost:LOCAL_PORT`.
+[Install]
+WantedBy=multi-user.target
+EOF
 
-### Reverse Proxy
+# Enable and start
+sudo mkdir -p /var/lib/pfm
+sudo systemctl daemon-reload
+sudo systemctl enable pfm
+sudo systemctl start pfm
+```
 
-Set up HTTP/HTTPS reverse proxy to route traffic to backend servers.
+#### Service Management (Linux)
 
-### Proxy Chain
+```bash
+sudo systemctl status pfm      # Check status
+sudo systemctl start pfm       # Start service
+sudo systemctl stop pfm        # Stop service
+sudo systemctl restart pfm     # Restart service
+journalctl -u pfm -f           # View logs
+```
 
-Create multi-hop proxy chains for complex routing scenarios:
+---
 
-1. Create a chain with multiple hops (SOCKS5, HTTP, Shadowsocks)
-2. Create a rule that uses the chain
-3. Traffic will be routed through all hops in sequence
+## CLI Commands
+
+The CLI is available on all platforms (run `pfm help` for full list):
+
+```
+Usage:
+  pfm <command> [arguments]
+
+Commands:
+  service     Manage the background service
+  rule        Manage port forwarding rules
+  chain       Manage proxy chains
+  status      Show service and rules status
+  version     Show version information
+  help        Show help message
+```
+
+### Service Commands
+
+```bash
+pfm service run         # Run as foreground service (for systemd/init)
+pfm service install     # Install as system service
+pfm service uninstall   # Uninstall system service
+pfm service status      # Show service status
+```
+
+### Rule Commands
+
+```bash
+pfm rule list                  # List all rules
+pfm rule show <id>             # Show rule details
+pfm rule start <id>            # Start a rule
+pfm rule stop <id>             # Stop a rule
+pfm rule delete <id>           # Delete a rule
+pfm rule create '<json>'       # Create rule from JSON
+```
+
+### Chain Commands
+
+```bash
+pfm chain list                 # List all chains
+pfm chain show <id>            # Show chain details
+pfm chain delete <id>          # Delete a chain
+```
+
+### Status Command
+
+```bash
+pfm status                     # Show overall status and rule list
+```
+
+### Examples
+
+```bash
+# Check service and rules status
+pfm status
+
+# List all forwarding rules
+pfm rule list
+
+# Start a specific rule
+pfm rule start 41cdc69b
+
+# Create a new rule
+pfm rule create '{"name":"MySQL","type":"forward","protocol":"tcp","localPort":13306,"targetHost":"192.168.1.100","targetPort":3306}'
+```
+
+---
 
 ## Configuration
 
-Configuration is stored in:
-- **macOS**: `~/Library/Application Support/pfm/data.json`
-- **Windows**: `%APPDATA%\pfm\data.json`
-- **Linux**: `~/.config/pfm/data.json`
+### Data Storage
+
+| Platform | Location |
+|----------|----------|
+| macOS | `~/Library/Application Support/pfm/data.json` |
+| Windows | `%APPDATA%\pfm\data.json` |
+| Linux | `/var/lib/pfm/data.json` (service) or `~/.config/pfm/data.json` (user) |
 
 ### Export/Import
 
-Rules can be exported and imported as JSON for backup or migration.
+Rules can be exported and imported as JSON via:
+- **GUI**: Settings → Data Management → Export/Import
+- **CLI**: Manual JSON file editing
 
-## System Service
+### Settings
 
-The application can run as a system service for background operation:
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Log Level | debug, info, warn, error | info |
+| Auto Start | Start enabled rules on service startup | true |
+| System Tray | Show tray icon (GUI only) | true |
+| Global Hotkey | Enable hotkey (GUI only) | true |
+| Hotkey Combo | Modifier + Key | Cmd+Shift+P (macOS) |
 
-1. Go to **Settings** > **Service Management**
-2. Click **Install Service**
-3. The service will start automatically on system boot
+---
 
-Service locations:
-- **macOS**: launchd (`~/Library/LaunchAgents/`)
-- **Windows**: Windows Service (SCM)
-- **Linux**: systemd (`~/.config/systemd/user/`)
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    PFM Architecture                         │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────────┐     IPC (Unix Socket)    ┌─────────────┐  │
+│  │   GUI App   │ ◄─────────────────────► │   Service   │  │
+│  │  (Wails)    │                          │  (Daemon)   │  │
+│  └─────────────┘                          └──────┬──────┘  │
+│                                                  │         │
+│  ┌─────────────┐                                 │         │
+│  │   CLI App   │ ◄───────────────────────────────┤         │
+│  │  (nogui)    │                                 │         │
+│  └─────────────┘                                 ▼         │
+│                                           ┌─────────────┐  │
+│                                           │ gost Engine │  │
+│                                           │  (go-gost)  │  │
+│                                           └─────────────┘  │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Components
+
+| Component | Description |
+|-----------|-------------|
+| GUI App | Wails-based desktop application with Vue 3 frontend |
+| CLI App | Headless command-line interface (Linux servers) |
+| Service | Background daemon managing port forwarding |
+| IPC | JSON-RPC over Unix socket for GUI/CLI ↔ Service communication |
+| gost Engine | Core proxy/forwarding engine from go-gost/x |
+
+---
 
 ## Project Structure
 
 ```
 pfm/
-├── app.go                 # Wails application bindings
-├── main.go                # Application entry point
-├── wails.json             # Wails configuration
-├── frontend/              # Vue 3 frontend
+├── main.go                    # GUI app entry point
+├── main_nogui.go              # CLI-only entry point (build tag: nogui)
+├── app.go                     # Wails application bindings
+├── wails.json                 # Wails configuration
+├── frontend/                  # Vue 3 frontend
 │   ├── src/
-│   │   ├── views/         # Page components
-│   │   ├── stores/        # Pinia stores
-│   │   ├── types/         # TypeScript types
+│   │   ├── views/             # Page components
+│   │   ├── stores/            # Pinia stores
+│   │   ├── types/             # TypeScript types
 │   │   └── App.vue
 │   └── package.json
 ├── internal/
-│   ├── engine/            # gost engine wrapper
-│   ├── models/            # Data models
-│   ├── storage/           # JSON file persistence
-│   ├── daemon/            # System service support
-│   └── ipc/               # GUI-Service communication
-├── cmd/
-│   └── service/           # Background service entry
-└── scripts/               # Utility scripts
+│   ├── engine/                # gost engine wrapper
+│   ├── models/                # Data models
+│   ├── storage/               # JSON file persistence
+│   ├── daemon/                # System service support
+│   ├── ipc/                   # GUI/CLI-Service communication
+│   ├── cli/                   # CLI command handlers
+│   ├── tray/                  # System tray support
+│   └── hotkey/                # Global hotkey support
+├── scripts/
+│   ├── install-linux.sh       # Linux installation script
+│   └── pfm.service            # systemd service template
+└── build/
+    └── bin/                   # Build output
 ```
+
+---
 
 ## Development
 
@@ -178,6 +358,25 @@ After modifying Go structs exposed to frontend:
 wails generate module
 ```
 
+### Building for Different Platforms
+
+```bash
+# macOS (current architecture)
+wails build
+
+# macOS (specific architecture)
+wails build -platform darwin/arm64
+wails build -platform darwin/amd64
+
+# Windows
+wails build -platform windows/amd64
+
+# Linux CLI (no GUI dependencies)
+GOOS=linux GOARCH=amd64 go build -tags nogui -o pfm .
+```
+
+---
+
 ## Upgrading gost
 
 To upgrade the gost core library:
@@ -193,6 +392,48 @@ go mod tidy
 # Rebuild
 wails build -clean
 ```
+
+---
+
+## Troubleshooting
+
+### macOS: Global hotkey not working
+
+Grant Accessibility permission:
+1. System Settings → Privacy & Security → Accessibility
+2. Enable permission for `pfm.app`
+
+### macOS: Service requires authorization
+
+The service is installed as a LaunchDaemon in `/Library/LaunchDaemons/`, which requires admin privileges. Authorization is only needed during:
+- Service installation
+- Service uninstallation
+
+Once installed, the service auto-manages itself (auto-start, auto-restart).
+
+### Linux: Service not starting
+
+Check logs:
+```bash
+journalctl -u pfm -n 50
+```
+
+Verify binary permissions:
+```bash
+ls -la /usr/local/bin/pfm
+sudo chmod +x /usr/local/bin/pfm
+```
+
+### Connection refused when using CLI
+
+Ensure the service is running:
+```bash
+pfm service status
+# or
+sudo systemctl status pfm
+```
+
+---
 
 ## License
 
