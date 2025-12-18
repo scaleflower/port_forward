@@ -5,10 +5,10 @@ package hotkey
 import "golang.design/x/hotkey"
 
 // Platform-specific modifier mappings for Linux
-// Linux doesn't have Cmd/Option, map to Ctrl/Alt
+// Linux uses Mod1 for Alt, Mod4 for Super/Win
 var (
-	modCmd    = hotkey.ModCtrl // Cmd -> Ctrl on Linux
-	modAlt    = hotkey.ModAlt  // Option -> Alt on Linux
+	modCmd    = hotkey.ModCtrl  // Cmd -> Ctrl on Linux
+	modAlt    = hotkey.Mod1     // Option -> Mod1 (Alt) on Linux
 	modCtrl   = hotkey.ModCtrl
 	modShift  = hotkey.ModShift
 )
