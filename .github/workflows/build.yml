@@ -31,11 +31,12 @@ jobs:
             output: pfm-windows-386.exe
             artifact: pfm-windows-386
             nsis: false
-          # Linux x86_64 (use ubuntu-22.04 for webkit2gtk-4.0)
+          # Linux x86_64 (CLI-only, no GUI dependencies)
           - os: ubuntu-22.04
             platform: linux/amd64
             output: pfm-linux-amd64
             artifact: pfm-linux-amd64
+            nogui: true
           # macOS Intel
           - os: macos-latest
             platform: darwin/amd64
@@ -60,6 +61,7 @@ jobs:
           cache: true
 
       - name: Setup Node.js
+        if: matrix.nogui != true
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -67,11 +69,12 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install Wails CLI
+        if: matrix.nogui != true
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      # Linux dependencies (Ubuntu 22.04 has webkit2gtk-4.0)
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
+      # Linux GUI dependencies (only for GUI builds)
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux' && matrix.nogui != true
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
@@ -91,11 +94,13 @@ jobs:
         run: choco install nsis -y
 
       - name: Install frontend dependencies
+        if: matrix.nogui != true
         run: |
           cd frontend
           npm ci
 
-      - name: Build application
+      - name: Build GUI application
+        if: matrix.nogui != true
         shell: bash
         run: |
           if [[ "${{ matrix.platform }}" == "windows/386" ]]; then
@@ -109,6 +114,16 @@ jobs:
           else
             wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }}
           fi
+
+      - name: Build CLI application (nogui)
+        if: matrix.nogui == true
+        shell: bash
+        run: |
+          # Extract GOOS and GOARCH from platform string
+          GOOS=$(echo "${{ matrix.platform }}" | cut -d'/' -f1)
+          GOARCH=$(echo "${{ matrix.platform }}" | cut -d'/' -f2)
+          mkdir -p build/bin
+          CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -tags nogui -ldflags="-w -s" -o build/bin/${{ matrix.output }} .
 
       # Package artifacts
       - name: Package Windows artifact
