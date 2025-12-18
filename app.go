@@ -405,20 +405,12 @@ func (a *App) GetServiceStatus() string {
 
 // ==================== Import/Export Operations ====================
 
-// ExportData exports all data as JSON string
+// ExportData exports all data as JSON string (reads directly from file)
 func (a *App) ExportData() string {
-	if a.useIPC {
-		data, err := a.ipcClient.ExportData()
-		if err != nil {
-			log.Printf("[App] IPC ExportData error: %v", err)
-			return ""
-		}
-		return string(data)
-	}
-
-	data, err := a.store.ExportData()
+	// Always read directly from data file, regardless of IPC mode
+	data, err := storage.ReadDataFile()
 	if err != nil {
-		log.Printf("[App] ExportData error: %v", err)
+		log.Printf("[App] ExportData error reading file: %v", err)
 		return ""
 	}
 	return string(data)

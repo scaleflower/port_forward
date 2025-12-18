@@ -100,6 +100,27 @@ func (s *Store) GetDataDir() string {
 	return s.dataDir
 }
 
+// GetDataFile returns the data file path
+func (s *Store) GetDataFile() string {
+	return s.dataFile
+}
+
+// GetDefaultDataFile returns the default data file path (for direct file access)
+func GetDefaultDataFile() string {
+	var dataDir string
+	if envDir := os.Getenv("PFM_DATA_DIR"); envDir != "" {
+		dataDir = envDir
+	} else {
+		dataDir = getDefaultDataDir()
+	}
+	return filepath.Join(dataDir, "data.json")
+}
+
+// ReadDataFile reads the data file directly from disk
+func ReadDataFile() ([]byte, error) {
+	return os.ReadFile(GetDefaultDataFile())
+}
+
 // ==================== Config Operations ====================
 
 // GetConfig returns the current application configuration
