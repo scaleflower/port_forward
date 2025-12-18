@@ -405,9 +405,12 @@ pfm rule create '{"name":"MySQL","type":"forward","protocol":"tcp","localPort":1
 
 | Platform | Location |
 |----------|----------|
-| macOS | `~/Library/Application Support/pfm/data.json` |
-| Windows | `C:\ProgramData\pfm\data.json` |
-| Linux | `/var/lib/pfm/data.json` (service) or `~/.config/pfm/data.json` (user) |
+| All | `<executable_dir>/data/data.json` (default, portable) |
+| macOS | `~/Library/Application Support/pfm/data.json` (fallback) |
+| Windows | `C:\ProgramData\pfm\data.json` (fallback) |
+| Linux | `/var/lib/pfm/data.json` or `~/.config/pfm/data.json` (fallback) |
+
+> **Note**: Data directory is created in the same folder as the executable by default, enabling portable deployment.
 
 ### Export/Import
 

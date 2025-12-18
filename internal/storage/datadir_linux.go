@@ -8,13 +8,22 @@ import (
 )
 
 // getDefaultDataDir returns the default data directory for Linux
+// Uses executable directory for portable deployment
 func getDefaultDataDir() string {
-	// Check if running as root (service mode)
+	// Use executable's directory/data for portable deployment
+	execPath, err := os.Executable()
+	if err == nil {
+		execPath, err = filepath.EvalSymlinks(execPath)
+		if err == nil {
+			return filepath.Join(filepath.Dir(execPath), "data")
+		}
+	}
+
+	// Fallback based on user
 	if os.Getuid() == 0 {
 		return "/var/lib/pfm"
 	}
 
-	// User mode: use ~/.config/pfm
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		home, err := os.UserHomeDir()

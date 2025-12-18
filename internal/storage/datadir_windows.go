@@ -8,9 +8,18 @@ import (
 )
 
 // getDefaultDataDir returns the default data directory for Windows
-// Uses C:\ProgramData\pfm for service compatibility (SYSTEM account access)
+// Uses executable directory for portable deployment
 func getDefaultDataDir() string {
-	// Use ProgramData for shared access between user and service
+	// Use executable's directory/data for portable deployment
+	execPath, err := os.Executable()
+	if err == nil {
+		execPath, err = filepath.EvalSymlinks(execPath)
+		if err == nil {
+			return filepath.Join(filepath.Dir(execPath), "data")
+		}
+	}
+
+	// Fallback to ProgramData
 	programData := os.Getenv("ProgramData")
 	if programData == "" {
 		programData = `C:\ProgramData`
