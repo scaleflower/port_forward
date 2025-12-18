@@ -28,15 +28,16 @@ jobs:
             platform: windows/386
             output: pfm-windows-386.exe
             artifact: pfm-windows-386
-          # Linux
+          # Linux x86_64
           - os: ubuntu-latest
             platform: linux/amd64
             output: pfm-linux-amd64
             artifact: pfm-linux-amd64
+          # Linux ARM64
           - os: ubuntu-latest
-            platform: linux/386
-            output: pfm-linux-386
-            artifact: pfm-linux-386
+            platform: linux/arm64
+            output: pfm-linux-arm64
+            artifact: pfm-linux-arm64
           # macOS
           - os: macos-latest
             platform: darwin/amd64
@@ -76,13 +77,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
 
-      # Install 32-bit libraries for Linux 386 build
-      - name: Install Linux 386 dependencies
-        if: runner.os == 'Linux' && contains(matrix.platform, '386')
+      # Install ARM64 cross-compilation toolchain for Linux ARM64 build
+      - name: Install Linux ARM64 cross-compilation tools
+        if: runner.os == 'Linux' && contains(matrix.platform, 'arm64')
         run: |
-          sudo dpkg --add-architecture i386
-          sudo apt-get update
-          sudo apt-get install -y gcc-multilib g++-multilib
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
       # Windows dependencies for CGO
       - name: Setup MSYS2 (Windows)
@@ -114,6 +113,13 @@ jobs:
           elif [[ "${{ matrix.platform }}" == "windows/amd64" ]]; then
             export PATH="/c/msys64/mingw64/bin:$PATH"
             wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }} -nsis
+          elif [[ "${{ matrix.platform }}" == "linux/arm64" ]]; then
+            export CC=aarch64-linux-gnu-gcc
+            export CXX=aarch64-linux-gnu-g++
+            export CGO_ENABLED=1
+            export GOOS=linux
+            export GOARCH=arm64
+            wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }} -skipbindings
           else
             wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }}
           fi
@@ -177,7 +183,7 @@ jobs:
           [ -f artifacts/pfm-windows-386/pfm-windows-386-installer.exe ] && cp artifacts/pfm-windows-386/pfm-windows-386-installer.exe release/ || true
           # Linux
           cp artifacts/pfm-linux-amd64/pfm-linux-amd64 release/
-          cp artifacts/pfm-linux-386/pfm-linux-386 release/
+          cp artifacts/pfm-linux-arm64/pfm-linux-arm64 release/
           # macOS
           cp artifacts/pfm-macos-intel/pfm-macos-intel.zip release/
           cp artifacts/pfm-macos-apple-silicon/pfm-macos-apple-silicon.zip release/
