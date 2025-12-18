@@ -26,6 +26,7 @@ A cross-platform port forwarding manager with GUI and CLI support, built on [gos
 | macOS | GUI + Service | Full GUI, system tray, global hotkey, LaunchDaemon |
 | Windows | GUI + Service | Full GUI, system tray, global hotkey, Windows Service |
 | Linux | CLI + Service | Command-line interface, systemd service |
+| Docker | CLI + Container | Containerized deployment, volume persistence |
 
 ## Tech Stack
 
@@ -170,6 +171,158 @@ sudo systemctl start pfm       # Start service
 sudo systemctl stop pfm        # Stop service
 sudo systemctl restart pfm     # Restart service
 journalctl -u pfm -f           # View logs
+```
+
+### Docker Deployment
+
+Docker provides the easiest deployment method with automatic container management.
+
+#### Quick Start with Docker Compose (Recommended)
+
+```bash
+# Clone the repository
+git clone https://github.com/scaleflower/port_forward.git
+cd port_forward/pfm
+
+# Start with docker-compose
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop
+docker-compose down
+```
+
+#### Build and Run with Docker
+
+```bash
+# Build image
+docker build -t pfm:latest .
+
+# Run container (host network mode for port forwarding)
+docker run -d \
+  --name pfm \
+  --network host \
+  --restart unless-stopped \
+  -v pfm-data:/data \
+  -e TZ=Asia/Shanghai \
+  pfm:latest
+
+# View logs
+docker logs -f pfm
+
+# Execute CLI commands
+docker exec pfm pfm status
+docker exec pfm pfm rule list
+```
+
+#### Docker Compose Configuration
+
+```yaml
+version: '3.8'
+
+services:
+  pfm:
+    image: pfm:latest
+    container_name: pfm
+    restart: unless-stopped
+
+    # Host network mode (recommended for port forwarding)
+    network_mode: host
+
+    # Alternative: Bridge mode with port mappings
+    # ports:
+    #   - "10000-10100:10000-10100"
+
+    volumes:
+      # Named volume for persistent data
+      - pfm-data:/data
+
+      # Or bind mount to local directory
+      # - ./data:/data
+
+    environment:
+      - TZ=Asia/Shanghai
+      - PFM_DATA_DIR=/data
+
+volumes:
+  pfm-data:
+```
+
+#### Network Modes
+
+| Mode | Command | Use Case |
+|------|---------|----------|
+| **Host** | `network_mode: host` | Port forwarding (recommended) - container shares host network |
+| **Bridge** | `ports: ["8080:8080"]` | Isolated network with explicit port mappings |
+
+#### Data Persistence
+
+Data is stored in `/data` inside the container:
+
+```bash
+# Using named volume (recommended)
+-v pfm-data:/data
+
+# Using bind mount (for easy backup/editing)
+-v /path/on/host:/data
+```
+
+Data files:
+- `/data/data.json` - Rules, chains, and configuration
+
+#### Managing Rules via CLI
+
+```bash
+# Check status
+docker exec pfm pfm status
+
+# List rules
+docker exec pfm pfm rule list
+
+# Start/stop a rule
+docker exec pfm pfm rule start <rule-id>
+docker exec pfm pfm rule stop <rule-id>
+
+# Create a new rule
+docker exec pfm pfm rule create '{"name":"MySQL","type":"forward","protocol":"tcp","localPort":13306,"targetHost":"192.168.1.100","targetPort":3306}'
+```
+
+#### Pre-configured Rules
+
+You can mount a pre-configured `data.json` file:
+
+```bash
+# Create config directory
+mkdir -p ./data
+
+# Create initial configuration
+cat > ./data/data.json << 'EOF'
+{
+  "config": {
+    "logLevel": "info",
+    "autoStart": true
+  },
+  "rules": [
+    {
+      "id": "rule-001",
+      "name": "MySQL Forward",
+      "type": "forward",
+      "protocol": "tcp",
+      "localPort": 13306,
+      "targetHost": "192.168.1.100",
+      "targetPort": 3306,
+      "enabled": true,
+      "status": "stopped"
+    }
+  ],
+  "chains": []
+}
+EOF
+
+# Run with bind mount
+docker run -d --name pfm --network host -v ./data:/data pfm:latest
 ```
 
 ---

@@ -1,0 +1,39 @@
+# Build outputs
+build/
+dist/
+
+# Frontend (not needed for CLI build)
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Test files
+*_test.go
+coverage.out
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local data
+data/
+*.json
+!wails.json
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore

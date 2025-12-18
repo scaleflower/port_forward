@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  pfm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pfm:latest
+    container_name: pfm
+    restart: unless-stopped
+
+    # Network mode options:
+    # 1. host mode (recommended for port forwarding - direct access to host ports)
+    network_mode: host
+
+    # 2. bridge mode (use port mappings below instead of network_mode: host)
+    # ports:
+    #   - "10000-10100:10000-10100"  # Port forwarding range
+    #   - "8080:8080"                 # Example HTTP port
+    #   - "9000:9000"                 # Example metrics port
+
+    volumes:
+      # Persistent data storage (rules, chains, config)
+      - pfm-data:/data
+
+      # Alternative: bind mount to local directory
+      # - ./data:/data
+
+    environment:
+      - TZ=Asia/Shanghai  # Set timezone
+      # - PFM_LOG_LEVEL=debug  # Optional: debug, info, warn, error
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "pfm", "status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pfm-data:
+    name: pfm-data
