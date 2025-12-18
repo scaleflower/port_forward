@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/kardianos/service"
 	"pfm/internal/engine"
@@ -277,6 +278,11 @@ func Uninstall() error {
 		return uninstallDarwinService()
 	}
 
+	// On Windows, use sc command to ensure complete removal
+	if runtime.GOOS == "windows" {
+		return uninstallWindowsService()
+	}
+
 	svcConfig := &service.Config{
 		Name:        ServiceName,
 		DisplayName: ServiceDisplayName,
@@ -290,6 +296,36 @@ func Uninstall() error {
 	}
 
 	return s.Uninstall()
+}
+
+// uninstallWindowsService uninstalls service on Windows using sc command
+func uninstallWindowsService() error {
+	// Check for admin privileges
+	if !isAdmin() {
+		return fmt.Errorf("需要管理员权限。请右键点击程序，选择「以管理员身份运行」")
+	}
+
+	// Stop the service first (ignore error if not running)
+	stopCmd := exec.Command("sc", "stop", ServiceName)
+	stopCmd.Run()
+
+	// Wait a moment for service to stop
+	time.Sleep(time.Second)
+
+	// Delete the service
+	deleteCmd := exec.Command("sc", "delete", ServiceName)
+	output, err := deleteCmd.CombinedOutput()
+	if err != nil {
+		outputStr := strings.TrimSpace(string(output))
+		if strings.Contains(outputStr, "1060") {
+			// Service does not exist - already uninstalled
+			return nil
+		}
+		return fmt.Errorf("卸载服务失败: %s", outputStr)
+	}
+
+	log.Printf("[Daemon] Windows service uninstalled successfully")
+	return nil
 }
 
 // uninstallDarwinService uninstalls service on macOS with admin privileges
