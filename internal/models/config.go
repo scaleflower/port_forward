@@ -84,3 +84,24 @@ type RuleStats struct {
 	Errors       int64  `json:"errors"`
 	LastActivity string `json:"lastActivity,omitempty"`
 }
+
+// LogLevel represents the severity level of a log entry
+type LogLevel string
+
+const (
+	LogLevelDebug LogLevel = "debug"
+	LogLevelInfo  LogLevel = "info"
+	LogLevelWarn  LogLevel = "warn"
+	LogLevelError LogLevel = "error"
+)
+
+// LogEntry represents a single log entry (for IPC)
+type LogEntry struct {
+	ID        int64    `json:"id"`
+	Timestamp string   `json:"timestamp"`
+	Level     LogLevel `json:"level"`
+	RuleID    string   `json:"ruleId,omitempty"`
+	RuleName  string   `json:"ruleName,omitempty"`
+	Message   string   `json:"message"`
+	Details   string   `json:"details,omitempty"`
+}

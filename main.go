@@ -1,7 +1,10 @@
+//go:build !nogui
+
 package main
 
 import (
 	"embed"
+	"fmt"
 	"log"
 	"os"
 
@@ -12,6 +15,7 @@ import (
 	// Import engine to register protocols
 	_ "pfm/internal/engine"
 
+	"pfm/internal/cli"
 	"pfm/internal/daemon"
 )
 
@@ -19,13 +23,24 @@ import (
 var assets embed.FS
 
 func main() {
+	args := os.Args[1:]
+
 	// Check if running as service
-	if len(os.Args) >= 3 && os.Args[1] == "service" && os.Args[2] == "run" {
+	if cli.IsServiceRunCommand(args) {
 		runAsService()
 		return
 	}
 
-	// Normal GUI mode
+	// Check if CLI command
+	if cli.IsCLICommand(args) {
+		if err := cli.Run(args); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Normal GUI mode (no args or unrecognized args)
 	runGUI()
 }
 

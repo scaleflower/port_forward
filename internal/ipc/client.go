@@ -219,3 +219,47 @@ func (c *Client) ImportData(data []byte, merge bool) error {
 	var success bool
 	return c.call("ImportData", &ImportDataArgs{Data: data, Merge: merge}, &success)
 }
+
+// ==================== Log Operations ====================
+
+// GetLogs returns recent log entries
+func (c *Client) GetLogs(count int) ([]*models.LogEntry, error) {
+	var logs []*models.LogEntry
+	err := c.call("GetLogs", &GetLogsArgs{Count: count}, &logs)
+	return logs, err
+}
+
+// GetLogsSince returns log entries since a specific ID
+func (c *Client) GetLogsSince(sinceID int64) ([]*models.LogEntry, error) {
+	var logs []*models.LogEntry
+	err := c.call("GetLogsSince", &GetLogsSinceArgs{SinceID: sinceID}, &logs)
+	return logs, err
+}
+
+// GetLogsByRule returns log entries for a specific rule
+func (c *Client) GetLogsByRule(ruleID string) ([]*models.LogEntry, error) {
+	var logs []*models.LogEntry
+	err := c.call("GetLogsByRule", &GetLogsByRuleArgs{RuleID: ruleID}, &logs)
+	return logs, err
+}
+
+// ClearLogs clears all log entries
+func (c *Client) ClearLogs() error {
+	var success bool
+	return c.call("ClearLogs", &Empty{}, &success)
+}
+
+// GetLogsArgs holds arguments for GetLogs
+type GetLogsArgs struct {
+	Count int `json:"count"`
+}
+
+// GetLogsSinceArgs holds arguments for GetLogsSince
+type GetLogsSinceArgs struct {
+	SinceID int64 `json:"sinceId"`
+}
+
+// GetLogsByRuleArgs holds arguments for GetLogsByRule
+type GetLogsByRuleArgs struct {
+	RuleID string `json:"ruleId"`
+}

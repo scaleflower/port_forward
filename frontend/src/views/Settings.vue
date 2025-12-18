@@ -149,52 +149,6 @@ async function uninstallService() {
   }
 }
 
-async function startService() {
-  try {
-    serviceLoading.value = true
-    await store.startService()
-    ElMessage.success('Service started')
-    await store.refreshServiceStatus()
-  } catch (e: any) {
-    ElMessage.error(e.message || 'Failed to start')
-  } finally {
-    serviceLoading.value = false
-  }
-}
-
-async function stopService() {
-  try {
-    await ElMessageBox.confirm(
-      'Stop the background service? All running rules will be stopped.',
-      'Stop Service',
-      { type: 'warning' }
-    )
-    serviceLoading.value = true
-    await store.stopService()
-    ElMessage.success('Service stopped')
-    await store.refreshServiceStatus()
-  } catch (e: any) {
-    if (e !== 'cancel') {
-      ElMessage.error(e.message || 'Failed to stop')
-    }
-  } finally {
-    serviceLoading.value = false
-  }
-}
-
-async function restartService() {
-  try {
-    serviceLoading.value = true
-    await store.restartService()
-    ElMessage.success('Service restarted')
-    await store.refreshServiceStatus()
-  } catch (e: any) {
-    ElMessage.error(e.message || 'Failed to restart')
-  } finally {
-    serviceLoading.value = false
-  }
-}
-
 function getServiceStatusType(status: string) {
   switch (status) {
     case 'running':
@@ -356,8 +310,8 @@ async function clearAllData() {
           style="margin-bottom: 20px"
         >
           <template #title>
-            Installing as a system service allows the application to run in the background
-            and start automatically on boot.
+            Installing as a system service allows port forwarding to run in the background
+            and start automatically on boot. The service is self-managing and will auto-restart if needed.
           </template>
         </el-alert>
 
@@ -374,45 +328,14 @@ async function clearAllData() {
           </template>
 
           <template v-else>
-            <el-button-group>
-              <el-button
-                v-if="store.serviceStatus === 'stopped'"
-                type="success"
-                :loading="serviceLoading"
-                @click="startService"
-              >
-                <el-icon><VideoPlay /></el-icon>
-                Start
-              </el-button>
-              <el-button
-                v-if="store.serviceStatus === 'running'"
-                type="danger"
-                :loading="serviceLoading"
-                @click="stopService"
-              >
-                <el-icon><VideoPause /></el-icon>
-                Stop
-              </el-button>
-              <el-button
-                v-if="store.serviceStatus === 'running'"
-                type="warning"
-                :loading="serviceLoading"
-                @click="restartService"
-              >
-                <el-icon><RefreshRight /></el-icon>
-                Restart
-              </el-button>
-            </el-button-group>
-
             <el-button
               type="danger"
               plain
               :loading="serviceLoading"
               @click="uninstallService"
-              style="margin-left: 12px"
             >
               <el-icon><Delete /></el-icon>
-              Uninstall
+              Uninstall Service
             </el-button>
           </template>
         </div>

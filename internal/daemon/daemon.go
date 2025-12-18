@@ -340,6 +340,24 @@ func startDarwinService() error {
 		return fmt.Errorf("服务未安装")
 	}
 
+	// Check if service is already running
+	status, _ := darwinServiceStatus()
+	if status == service.StatusRunning {
+		log.Printf("[Daemon] Service is already running, skipping start")
+		return nil
+	}
+
+	// Try launchctl kickstart first (doesn't require sudo for already-loaded services)
+	// kickstart -k will restart a running service, or start a stopped one
+	kickstartCmd := exec.Command("launchctl", "kickstart", "-k", fmt.Sprintf("system/%s", ServiceName))
+	if output, err := kickstartCmd.CombinedOutput(); err == nil {
+		log.Printf("[Daemon] Service started via kickstart")
+		return nil
+	} else {
+		log.Printf("[Daemon] kickstart failed: %s, trying load with admin privileges", strings.TrimSpace(string(output)))
+	}
+
+	// Fallback to load with admin privileges (required if service was unloaded)
 	script := fmt.Sprintf(`
 do shell script "launchctl load -w '%s'" with administrator privileges
 `, plistPath)
@@ -380,6 +398,20 @@ func Stop() error {
 func stopDarwinService() error {
 	plistPath := fmt.Sprintf("/Library/LaunchDaemons/%s.plist", ServiceName)
 
+	// Check if plist exists
+	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
+		return fmt.Errorf("服务未安装")
+	}
+
+	// Check if service is already stopped
+	status, _ := darwinServiceStatus()
+	if status == service.StatusStopped {
+		log.Printf("[Daemon] Service is already stopped, skipping stop")
+		return nil
+	}
+
+	// Note: Due to KeepAlive: true in plist, the service will auto-restart after unload
+	// To permanently stop, user should uninstall the service
 	script := fmt.Sprintf(`
 do shell script "launchctl unload '%s'" with administrator privileges
 `, plistPath)

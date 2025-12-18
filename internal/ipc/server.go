@@ -383,3 +383,69 @@ func (h *RPCHandler) ImportData(args *ImportDataArgs, reply *bool) error {
 	*reply = true
 	return nil
 }
+
+// ==================== Log Operations ====================
+
+// GetLogs returns recent log entries
+func (h *RPCHandler) GetLogs(args *GetLogsArgs, reply *[]*models.LogEntry) error {
+	logs := h.engine.GetLogs(args.Count)
+	result := make([]*models.LogEntry, len(logs))
+	for i, l := range logs {
+		result[i] = &models.LogEntry{
+			ID:        l.ID,
+			Timestamp: l.Timestamp,
+			Level:     models.LogLevel(l.Level),
+			RuleID:    l.RuleID,
+			RuleName:  l.RuleName,
+			Message:   l.Message,
+			Details:   l.Details,
+		}
+	}
+	*reply = result
+	return nil
+}
+
+// GetLogsSince returns log entries since a specific ID
+func (h *RPCHandler) GetLogsSince(args *GetLogsSinceArgs, reply *[]*models.LogEntry) error {
+	logs := h.engine.GetLogsSince(args.SinceID)
+	result := make([]*models.LogEntry, len(logs))
+	for i, l := range logs {
+		result[i] = &models.LogEntry{
+			ID:        l.ID,
+			Timestamp: l.Timestamp,
+			Level:     models.LogLevel(l.Level),
+			RuleID:    l.RuleID,
+			RuleName:  l.RuleName,
+			Message:   l.Message,
+			Details:   l.Details,
+		}
+	}
+	*reply = result
+	return nil
+}
+
+// GetLogsByRule returns log entries for a specific rule
+func (h *RPCHandler) GetLogsByRule(args *GetLogsByRuleArgs, reply *[]*models.LogEntry) error {
+	logs := h.engine.GetLogsByRule(args.RuleID)
+	result := make([]*models.LogEntry, len(logs))
+	for i, l := range logs {
+		result[i] = &models.LogEntry{
+			ID:        l.ID,
+			Timestamp: l.Timestamp,
+			Level:     models.LogLevel(l.Level),
+			RuleID:    l.RuleID,
+			RuleName:  l.RuleName,
+			Message:   l.Message,
+			Details:   l.Details,
+		}
+	}
+	*reply = result
+	return nil
+}
+
+// ClearLogs clears all log entries
+func (h *RPCHandler) ClearLogs(args *Empty, reply *bool) error {
+	h.engine.ClearLogs()
+	*reply = true
+	return nil
+}

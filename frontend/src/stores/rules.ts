@@ -20,9 +20,6 @@ import {
   NewChain,
   InstallService,
   UninstallService,
-  StartService,
-  StopService,
-  RestartService,
   GetAllRuleStats,
   GetLogs,
   GetLogsSince,
@@ -288,36 +285,6 @@ export const useRulesStore = defineStore('rules', () => {
     }
   }
 
-  async function startService(): Promise<boolean> {
-    try {
-      await StartService()
-      return true
-    } catch (e: any) {
-      error.value = e.message || 'Failed to start service'
-      throw e
-    }
-  }
-
-  async function stopService(): Promise<boolean> {
-    try {
-      await StopService()
-      return true
-    } catch (e: any) {
-      error.value = e.message || 'Failed to stop service'
-      throw e
-    }
-  }
-
-  async function restartService(): Promise<boolean> {
-    try {
-      await RestartService()
-      return true
-    } catch (e: any) {
-      error.value = e.message || 'Failed to restart service'
-      throw e
-    }
-  }
-
   // Statistics methods
   async function fetchStats() {
     try {
@@ -424,9 +391,6 @@ export const useRulesStore = defineStore('rules', () => {
     refreshServiceStatus,
     installService,
     uninstallService,
-    startService,
-    stopService,
-    restartService,
     fetchStats,
     getStatsForRule,
     fetchLogs,

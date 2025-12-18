@@ -1,0 +1,25 @@
+[Unit]
+Description=Port Forward Manager Service
+Documentation=https://github.com/your-repo/pfm
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/pfm service run
+Restart=always
+RestartSec=5
+User=root
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pfm
+
+# Security hardening (optional, adjust as needed)
+# NoNewPrivileges=true
+# ProtectSystem=strict
+# ProtectHome=true
+# PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

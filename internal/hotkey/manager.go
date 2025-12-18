@@ -178,18 +178,15 @@ func parseModifiers(s string) ([]hotkey.Modifier, error) {
 		part = strings.TrimSpace(part)
 		switch part {
 		case "cmd", "command", "super":
-			if runtime.GOOS == "darwin" {
-				mods = append(mods, hotkey.ModCmd)
-			} else {
-				// On non-macOS, treat Cmd as Ctrl
-				mods = append(mods, hotkey.ModCtrl)
-			}
+			// Use platform-specific modCmd (Cmd on macOS, Ctrl on Windows/Linux)
+			mods = append(mods, modCmd)
 		case "ctrl", "control":
-			mods = append(mods, hotkey.ModCtrl)
+			mods = append(mods, modCtrl)
 		case "shift":
-			mods = append(mods, hotkey.ModShift)
+			mods = append(mods, modShift)
 		case "alt", "option":
-			mods = append(mods, hotkey.ModOption)
+			// Use platform-specific modAlt (Option on macOS, Alt on Windows/Linux)
+			mods = append(mods, modAlt)
 		case "":
 			// Skip empty parts
 		default:

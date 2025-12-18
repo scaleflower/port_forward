@@ -1,3 +1,5 @@
+//go:build !nogui
+
 package main
 
 import (
@@ -550,8 +552,24 @@ type LogEntry struct {
 // GetLogs returns recent log entries
 func (a *App) GetLogs(count int) []LogEntry {
 	if a.useIPC {
-		// TODO: implement IPC call
-		return []LogEntry{}
+		logs, err := a.ipcClient.GetLogs(count)
+		if err != nil {
+			log.Printf("[App] IPC GetLogs error: %v", err)
+			return []LogEntry{}
+		}
+		result := make([]LogEntry, len(logs))
+		for i, l := range logs {
+			result[i] = LogEntry{
+				ID:        l.ID,
+				Timestamp: l.Timestamp,
+				Level:     string(l.Level),
+				RuleID:    l.RuleID,
+				RuleName:  l.RuleName,
+				Message:   l.Message,
+				Details:   l.Details,
+			}
+		}
+		return result
 	}
 	if a.engine == nil {
 		return []LogEntry{}
@@ -576,8 +594,24 @@ func (a *App) GetLogs(count int) []LogEntry {
 // GetLogsSince returns log entries since a specific ID
 func (a *App) GetLogsSince(sinceID int64) []LogEntry {
 	if a.useIPC {
-		// TODO: implement IPC call
-		return []LogEntry{}
+		logs, err := a.ipcClient.GetLogsSince(sinceID)
+		if err != nil {
+			log.Printf("[App] IPC GetLogsSince error: %v", err)
+			return []LogEntry{}
+		}
+		result := make([]LogEntry, len(logs))
+		for i, l := range logs {
+			result[i] = LogEntry{
+				ID:        l.ID,
+				Timestamp: l.Timestamp,
+				Level:     string(l.Level),
+				RuleID:    l.RuleID,
+				RuleName:  l.RuleName,
+				Message:   l.Message,
+				Details:   l.Details,
+			}
+		}
+		return result
 	}
 	if a.engine == nil {
 		return []LogEntry{}
@@ -602,8 +636,24 @@ func (a *App) GetLogsSince(sinceID int64) []LogEntry {
 // GetLogsByRule returns log entries for a specific rule
 func (a *App) GetLogsByRule(ruleID string) []LogEntry {
 	if a.useIPC {
-		// TODO: implement IPC call
-		return []LogEntry{}
+		logs, err := a.ipcClient.GetLogsByRule(ruleID)
+		if err != nil {
+			log.Printf("[App] IPC GetLogsByRule error: %v", err)
+			return []LogEntry{}
+		}
+		result := make([]LogEntry, len(logs))
+		for i, l := range logs {
+			result[i] = LogEntry{
+				ID:        l.ID,
+				Timestamp: l.Timestamp,
+				Level:     string(l.Level),
+				RuleID:    l.RuleID,
+				RuleName:  l.RuleName,
+				Message:   l.Message,
+				Details:   l.Details,
+			}
+		}
+		return result
 	}
 	if a.engine == nil {
 		return []LogEntry{}
@@ -628,7 +678,9 @@ func (a *App) GetLogsByRule(ruleID string) []LogEntry {
 // ClearLogs clears all log entries
 func (a *App) ClearLogs() {
 	if a.useIPC {
-		// TODO: implement IPC call
+		if err := a.ipcClient.ClearLogs(); err != nil {
+			log.Printf("[App] IPC ClearLogs error: %v", err)
+		}
 		return
 	}
 	if a.engine != nil {
