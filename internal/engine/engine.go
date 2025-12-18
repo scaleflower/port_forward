@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,17 +25,21 @@ const (
 	observerName = "pfm-stats-observer"
 )
 
+// StatusChangeCallback is called when a service status changes
+type StatusChangeCallback func(ruleID string, status string, errorMsg string)
+
 // Engine manages gost services for port forwarding
 type Engine struct {
-	mu         sync.RWMutex
-	services   map[string]*serviceEntry
-	chains     []*models.Chain
-	logger     *log.Logger
-	stats      *StatsTracker
-	logMgr     *LogManager
-	observer   *StatsObserver
-	pollCtx    context.Context
-	pollCancel context.CancelFunc
+	mu               sync.RWMutex
+	services         map[string]*serviceEntry
+	chains           []*models.Chain
+	logger           *log.Logger
+	stats            *StatsTracker
+	logMgr           *LogManager
+	observer         *StatsObserver
+	pollCtx          context.Context
+	pollCancel       context.CancelFunc
+	onStatusChange   StatusChangeCallback
 }
 
 // serviceEntry holds a running service and its metadata
@@ -87,6 +92,13 @@ func New() *Engine {
 // SetLogger sets the logger for the engine
 func (e *Engine) SetLogger(logger *log.Logger) {
 	e.logger = logger
+}
+
+// SetStatusChangeCallback sets the callback for status changes
+func (e *Engine) SetStatusChangeCallback(callback StatusChangeCallback) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.onStatusChange = callback
 }
 
 // SetChains updates the chain configurations
@@ -188,15 +200,44 @@ func (e *Engine) StartRule(rule *models.Rule) error {
 
 	// Start the service in a goroutine
 	go func() {
-		e.logger.Printf("[Engine] Starting service: %s (%s)", rule.Name, rule.ID)
+		ruleID := rule.ID
+		ruleName := rule.Name
+		e.logger.Printf("[Engine] Starting service: %s (%s)", ruleName, ruleID)
 		if err := svc.Serve(); err != nil {
 			select {
 			case <-ctx.Done():
 				// Service was stopped intentionally
 			default:
-				e.logger.Printf("[Engine] Service error: %s - %v", rule.ID, err)
-				e.logMgr.LogError(rule.ID, rule.Name, err)
-				e.stats.IncrementErrors(rule.ID)
+				errMsg := err.Error()
+				// "use of closed network connection" is a normal shutdown signal, not an error
+				// Target unreachable errors should not stop the service
+				if strings.Contains(errMsg, "use of closed network connection") {
+					e.logger.Printf("[Engine] Service closed normally: %s", ruleID)
+					return
+				}
+
+				e.logger.Printf("[Engine] Service error: %s - %v", ruleID, err)
+				e.logMgr.LogError(ruleID, ruleName, err)
+				e.stats.IncrementErrors(ruleID)
+
+				// Only mark as error and remove for critical listener errors
+				// (e.g., port already in use, permission denied)
+				if strings.Contains(errMsg, "address already in use") ||
+					strings.Contains(errMsg, "permission denied") ||
+					strings.Contains(errMsg, "bind:") {
+					// Notify status change to error
+					e.mu.RLock()
+					callback := e.onStatusChange
+					e.mu.RUnlock()
+					if callback != nil {
+						callback(ruleID, "error", errMsg)
+					}
+
+					// Remove from running services
+					e.mu.Lock()
+					delete(e.services, ruleID)
+					e.mu.Unlock()
+				}
 			}
 		}
 	}()

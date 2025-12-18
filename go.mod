@@ -8,6 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/kardianos/service v1.2.4
 	github.com/wailsapp/wails/v2 v2.11.0
+	golang.design/x/hotkey v0.4.1
 )
 
 require (

@@ -3,13 +3,21 @@ package models
 // AppConfig represents the application configuration
 type AppConfig struct {
 	// General settings
-	LogLevel    string `json:"logLevel"`    // debug, info, warn, error
-	AutoStart   bool   `json:"autoStart"`   // Start rules on app launch
-	StartMinimized bool `json:"startMinimized"` // Start minimized to tray
+	LogLevel       string `json:"logLevel"`       // debug, info, warn, error
+	AutoStart      bool   `json:"autoStart"`      // Start rules on app launch
+	StartMinimized bool   `json:"startMinimized"` // Start minimized to tray
+
+	// Tray settings
+	TrayEnabled bool `json:"trayEnabled"` // Show system tray icon
+
+	// Hotkey settings
+	HotkeyEnabled   bool   `json:"hotkeyEnabled"`   // Enable global hotkey
+	HotkeyModifiers string `json:"hotkeyModifiers"` // e.g., "cmd+shift", "ctrl+shift"
+	HotkeyKey       string `json:"hotkeyKey"`       // e.g., "p", "f", "m"
 
 	// Service settings
-	ServiceEnabled bool   `json:"serviceEnabled"` // Run as background service
-	ServicePort    int    `json:"servicePort"`    // IPC port (default: 0 for auto)
+	ServiceEnabled bool `json:"serviceEnabled"` // Run as background service
+	ServicePort    int  `json:"servicePort"`    // IPC port (default: 0 for auto)
 
 	// API settings (for advanced users)
 	APIEnabled bool   `json:"apiEnabled"`
@@ -24,15 +32,19 @@ type AppConfig struct {
 // DefaultAppConfig returns the default application configuration
 func DefaultAppConfig() *AppConfig {
 	return &AppConfig{
-		LogLevel:       "info",
-		AutoStart:      true,
-		StartMinimized: false,
-		ServiceEnabled: false,
-		ServicePort:    0,
-		APIEnabled:     false,
-		APIAddr:        ":18080",
-		MetricsEnabled: false,
-		MetricsAddr:    ":9000",
+		LogLevel:        "info",
+		AutoStart:       true,
+		StartMinimized:  false,
+		TrayEnabled:     true,               // Enable tray by default
+		HotkeyEnabled:   true,               // Enable hotkey by default
+		HotkeyModifiers: "cmd+shift",        // Default: Cmd+Shift on macOS
+		HotkeyKey:       "p",                // Default: P key
+		ServiceEnabled:  false,
+		ServicePort:     0,
+		APIEnabled:      false,
+		APIAddr:         ":18080",
+		MetricsEnabled:  false,
+		MetricsAddr:     ":9000",
 	}
 }
 

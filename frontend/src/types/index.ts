@@ -68,6 +68,13 @@ export interface AppConfig {
   logLevel: string
   autoStart: boolean
   startMinimized: boolean
+  // Tray settings
+  trayEnabled: boolean
+  // Hotkey settings
+  hotkeyEnabled: boolean
+  hotkeyModifiers: string
+  hotkeyKey: string
+  // Service settings
   serviceEnabled: boolean
   servicePort: number
   apiEnabled: boolean

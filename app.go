@@ -6,23 +6,30 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"sync"
 
 	"pfm/internal/daemon"
 	"pfm/internal/engine"
+	"pfm/internal/hotkey"
 	"pfm/internal/ipc"
 	"pfm/internal/models"
 	"pfm/internal/storage"
+	"pfm/internal/tray"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct represents the application
 type App struct {
-	ctx       context.Context
-	engine    *engine.Engine
-	store     *storage.Store
-	ipcClient *ipc.Client
-	useIPC    bool // true if connecting to background service
+	ctx          context.Context
+	engine       *engine.Engine
+	store        *storage.Store
+	ipcClient    *ipc.Client
+	useIPC       bool // true if connecting to background service
+	trayManager  *tray.Manager
+	hotkeyMgr    *hotkey.Manager
+	windowHidden bool
+	mu           sync.Mutex
 }
 
 // NewApp creates a new App application struct
@@ -36,11 +43,24 @@ func (a *App) startup(ctx context.Context) {
 
 	// Try to connect to background service first
 	a.ipcClient = ipc.NewClient()
+	log.Println("[App] Trying to connect to background service...")
+
+	if err := a.ipcClient.Connect(); err != nil {
+		log.Printf("[App] IPC Connect failed: %v", err)
+	} else {
+		log.Println("[App] IPC Connect succeeded, trying Ping...")
+	}
+
 	if a.ipcClient.Ping() {
 		a.useIPC = true
-		log.Println("[App] Connected to background service")
+		log.Println("[App] Connected to background service successfully!")
+		// Initialize tray and hotkey
+		a.InitTray()
+		a.InitHotkey()
 		return
 	}
+
+	log.Println("[App] Ping failed, falling back to embedded mode")
 
 	// No background service, run embedded
 	a.useIPC = false
@@ -58,6 +78,16 @@ func (a *App) startup(ctx context.Context) {
 	a.engine = engine.New()
 	a.engine.SetChains(a.store.GetChains())
 
+	// Set status change callback to sync engine errors to store
+	a.engine.SetStatusChangeCallback(func(ruleID string, status string, errorMsg string) {
+		log.Printf("[App] Status change callback: rule=%s, status=%s, error=%s", ruleID, status, errorMsg)
+		if status == "error" {
+			a.store.UpdateRuleStatus(ruleID, models.RuleStatusError, errorMsg)
+		} else if status == "stopped" {
+			a.store.UpdateRuleStatus(ruleID, models.RuleStatusStopped, "")
+		}
+	})
+
 	// Start enabled rules and sync status
 	for _, rule := range a.store.GetRules() {
 		if rule.Enabled {
@@ -74,10 +104,17 @@ func (a *App) startup(ctx context.Context) {
 			}
 		}
 	}
+
+	// Initialize tray and hotkey
+	a.InitTray()
+	a.InitHotkey()
 }
 
 // shutdown is called when the app is closing
 func (a *App) shutdown(ctx context.Context) {
+	// Stop tray and hotkey
+	a.StopTrayAndHotkey()
+
 	if a.useIPC {
 		a.ipcClient.Close()
 	} else if a.engine != nil {
@@ -166,10 +203,20 @@ func (a *App) DeleteRule(id string) error {
 
 // StartRule starts a rule
 func (a *App) StartRule(id string) error {
+	log.Printf("[App] StartRule called for id: %s, useIPC: %v", id, a.useIPC)
+
 	if a.useIPC {
-		return a.ipcClient.StartRule(id)
+		log.Printf("[App] StartRule: calling IPC client...")
+		err := a.ipcClient.StartRule(id)
+		if err != nil {
+			log.Printf("[App] StartRule: IPC error: %v", err)
+		} else {
+			log.Printf("[App] StartRule: IPC call succeeded")
+		}
+		return err
 	}
 
+	log.Printf("[App] StartRule: running in embedded mode")
 	rule, err := a.store.GetRule(id)
 	if err != nil {
 		return err
@@ -586,5 +633,137 @@ func (a *App) ClearLogs() {
 	}
 	if a.engine != nil {
 		a.engine.ClearLogs()
+	}
+}
+
+// ==================== Window Operations ====================
+
+// ShowWindow shows the main window
+func (a *App) ShowWindow() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	wailsRuntime.WindowShow(a.ctx)
+	wailsRuntime.WindowSetAlwaysOnTop(a.ctx, true)
+	wailsRuntime.WindowSetAlwaysOnTop(a.ctx, false)
+	a.windowHidden = false
+	log.Println("[App] Window shown")
+}
+
+// HideWindow hides the main window
+func (a *App) HideWindow() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	wailsRuntime.WindowHide(a.ctx)
+	a.windowHidden = true
+	log.Println("[App] Window hidden")
+}
+
+// ToggleWindow toggles the main window visibility
+func (a *App) ToggleWindow() {
+	a.mu.Lock()
+	hidden := a.windowHidden
+	a.mu.Unlock()
+
+	if hidden {
+		a.ShowWindow()
+	} else {
+		a.HideWindow()
+	}
+}
+
+// IsWindowHidden returns true if the window is hidden
+func (a *App) IsWindowHidden() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.windowHidden
+}
+
+// ==================== Tray and Hotkey Operations ====================
+
+// InitTray initializes the system tray
+func (a *App) InitTray() {
+	config := a.GetConfig()
+	if !config.TrayEnabled {
+		log.Println("[App] Tray disabled in config")
+		return
+	}
+
+	a.trayManager = tray.NewManager(tray.Callbacks{
+		OnShow: func() {
+			a.ShowWindow()
+		},
+		OnHide: func() {
+			a.HideWindow()
+		},
+		OnQuit: func() {
+			log.Println("[App] Quit requested from tray")
+			wailsRuntime.Quit(a.ctx)
+		},
+	})
+
+	// Start tray in goroutine (it blocks)
+	go a.trayManager.Start(a.ctx)
+	log.Println("[App] System tray initialized")
+}
+
+// InitHotkey initializes the global hotkey
+func (a *App) InitHotkey() {
+	config := a.GetConfig()
+	if !config.HotkeyEnabled {
+		log.Println("[App] Hotkey disabled in config")
+		return
+	}
+
+	hotkeyConfig := &hotkey.Config{
+		Modifiers: config.HotkeyModifiers,
+		Key:       config.HotkeyKey,
+	}
+
+	var err error
+	a.hotkeyMgr, err = hotkey.NewManager(hotkeyConfig, func() {
+		log.Println("[App] Hotkey triggered")
+		a.ShowWindow()
+	})
+	if err != nil {
+		log.Printf("[App] Failed to create hotkey manager: %v", err)
+		return
+	}
+
+	if err := a.hotkeyMgr.Start(); err != nil {
+		log.Printf("[App] Failed to start hotkey: %v", err)
+		return
+	}
+
+	log.Printf("[App] Global hotkey initialized: %s", hotkey.GetHotkeyString(hotkeyConfig))
+}
+
+// UpdateHotkey updates the global hotkey configuration
+func (a *App) UpdateHotkey(modifiers, key string) error {
+	if a.hotkeyMgr == nil {
+		return nil
+	}
+
+	config := &hotkey.Config{
+		Modifiers: modifiers,
+		Key:       key,
+	}
+
+	if err := a.hotkeyMgr.UpdateConfig(config); err != nil {
+		return err
+	}
+
+	log.Printf("[App] Hotkey updated: %s", hotkey.GetHotkeyString(config))
+	return nil
+}
+
+// StopTrayAndHotkey stops tray and hotkey managers
+func (a *App) StopTrayAndHotkey() {
+	if a.trayManager != nil {
+		a.trayManager.Stop()
+	}
+	if a.hotkeyMgr != nil {
+		a.hotkeyMgr.Stop()
 	}
 }

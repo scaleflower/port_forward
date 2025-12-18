@@ -67,8 +67,9 @@ func (s *Server) Start() error {
 		return err
 	}
 
-	// Set permissions on socket
-	os.Chmod(socketPath, 0600)
+	// Set permissions on socket - allow all users to connect
+	// This is necessary when service runs as root but GUI runs as normal user
+	os.Chmod(socketPath, 0666)
 
 	// Create and register RPC handler
 	s.handler = &RPCHandler{
@@ -131,8 +132,9 @@ func GetSocketPath() string {
 	if runtime.GOOS == "windows" {
 		return `\\.\pipe\pfm`
 	}
-	// Unix systems
-	return filepath.Join(os.TempDir(), "pfm.sock")
+	// Unix systems - use fixed /tmp path to ensure consistency
+	// between service (running as root) and GUI (running as user)
+	return "/tmp/pfm.sock"
 }
 
 // RPCHandler handles RPC method calls
@@ -220,18 +222,28 @@ func (h *RPCHandler) DeleteRule(id *string, reply *bool) error {
 
 // StartRule starts a rule
 func (h *RPCHandler) StartRule(id *string, reply *bool) error {
+	h.logger.Printf("[IPC] StartRule called for id: %s", *id)
+
 	rule, err := h.store.GetRule(*id)
 	if err != nil {
+		h.logger.Printf("[IPC] StartRule: GetRule failed: %v", err)
 		*reply = false
 		return err
 	}
 
+	h.logger.Printf("[IPC] StartRule: Starting rule '%s' on port %d -> %s:%d", rule.Name, rule.LocalPort, rule.TargetHost, rule.TargetPort)
+
 	if err := h.engine.StartRule(rule); err != nil {
+		h.logger.Printf("[IPC] StartRule: engine.StartRule failed: %v", err)
 		h.store.UpdateRuleStatus(*id, models.RuleStatusError, err.Error())
 		*reply = false
 		return err
 	}
 
+	h.logger.Printf("[IPC] StartRule: Rule '%s' started successfully", rule.Name)
+	// Update status and save enabled state for auto-restart
+	rule.Enabled = true
+	h.store.UpdateRule(rule)
 	h.store.UpdateRuleStatus(*id, models.RuleStatusRunning, "")
 	*reply = true
 	return nil
@@ -244,6 +256,12 @@ func (h *RPCHandler) StopRule(id *string, reply *bool) error {
 		return err
 	}
 
+	// Update status and save disabled state
+	rule, err := h.store.GetRule(*id)
+	if err == nil {
+		rule.Enabled = false
+		h.store.UpdateRule(rule)
+	}
 	h.store.UpdateRuleStatus(*id, models.RuleStatusStopped, "")
 	*reply = true
 	return nil

@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/kardianos/service"
 	"pfm/internal/engine"
@@ -140,32 +143,132 @@ func (d *Daemon) Run() error {
 
 // Install installs the daemon as a system service
 func Install() error {
+	// Get executable path
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	// Resolve any symlinks
+	execPath, err = filepath.EvalSymlinks(execPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve executable path: %w", err)
+	}
+
+	log.Printf("[Daemon] Installing service with executable: %s", execPath)
+
+	// On macOS, use launchd plist directly with admin privileges
+	if runtime.GOOS == "darwin" {
+		return installDarwinService(execPath)
+	}
+
+	// For other platforms, use kardianos/service
 	svcConfig := &service.Config{
 		Name:        ServiceName,
 		DisplayName: ServiceDisplayName,
 		Description: ServiceDescription,
+		Executable:  execPath,
+		Arguments:   []string{"service", "run"},
 	}
-
-	// Get executable path
-	execPath, err := os.Executable()
-	if err != nil {
-		return err
-	}
-
-	svcConfig.Executable = execPath
-	svcConfig.Arguments = []string{"service", "run"}
 
 	prg := &program{}
 	s, err := service.New(prg, svcConfig)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create service: %w", err)
 	}
 
-	return s.Install()
+	// Check current status
+	status, _ := s.Status()
+	if status == service.StatusRunning {
+		return fmt.Errorf("service is already running, please stop it first")
+	}
+
+	if err := s.Install(); err != nil {
+		return fmt.Errorf("failed to install service: %w (executable: %s)", err, execPath)
+	}
+
+	log.Printf("[Daemon] Service installed successfully")
+	return nil
+}
+
+// installDarwinService installs service on macOS with admin privileges dialog
+func installDarwinService(execPath string) error {
+	plistPath := fmt.Sprintf("/Library/LaunchDaemons/%s.plist", ServiceName)
+
+	// Get current user's home directory for config files
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = "/var/root"
+	}
+
+	// Create plist content with environment variables
+	plistContent := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>%s</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>%s</string>
+        <string>service</string>
+        <string>run</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>%s</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/%s.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/%s.err</string>
+</dict>
+</plist>`, ServiceName, execPath, homeDir, ServiceName, ServiceName)
+
+	// Create temp file with plist content
+	tmpFile, err := os.CreateTemp("", "pfm-*.plist")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(plistContent); err != nil {
+		return fmt.Errorf("failed to write plist: %w", err)
+	}
+	tmpFile.Close()
+
+	// Use AppleScript to run commands with admin privileges
+	// This will show macOS authorization dialog
+	script := fmt.Sprintf(`
+do shell script "cp '%s' '%s' && launchctl load -w '%s'" with administrator privileges
+`, tmpFile.Name(), plistPath, plistPath)
+
+	cmd := exec.Command("osascript", "-e", script)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		outputStr := strings.TrimSpace(string(output))
+		if strings.Contains(outputStr, "User canceled") || strings.Contains(outputStr, "-128") {
+			return fmt.Errorf("用户取消了授权")
+		}
+		return fmt.Errorf("安装服务失败: %s", outputStr)
+	}
+
+	log.Printf("[Daemon] macOS service installed successfully")
+	return nil
 }
 
 // Uninstall removes the daemon from system services
 func Uninstall() error {
+	// On macOS, use launchctl directly with admin privileges
+	if runtime.GOOS == "darwin" {
+		return uninstallDarwinService()
+	}
+
 	svcConfig := &service.Config{
 		Name:        ServiceName,
 		DisplayName: ServiceDisplayName,
@@ -181,8 +284,40 @@ func Uninstall() error {
 	return s.Uninstall()
 }
 
+// uninstallDarwinService uninstalls service on macOS with admin privileges
+func uninstallDarwinService() error {
+	plistPath := fmt.Sprintf("/Library/LaunchDaemons/%s.plist", ServiceName)
+
+	// Check if plist exists
+	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
+		return fmt.Errorf("服务未安装")
+	}
+
+	// Use AppleScript to run commands with admin privileges
+	script := fmt.Sprintf(`
+do shell script "launchctl unload -w '%s' 2>/dev/null; rm -f '%s'" with administrator privileges
+`, plistPath, plistPath)
+
+	cmd := exec.Command("osascript", "-e", script)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		outputStr := strings.TrimSpace(string(output))
+		if strings.Contains(outputStr, "User canceled") || strings.Contains(outputStr, "-128") {
+			return fmt.Errorf("用户取消了授权")
+		}
+		return fmt.Errorf("卸载服务失败: %s", outputStr)
+	}
+
+	log.Printf("[Daemon] macOS service uninstalled successfully")
+	return nil
+}
+
 // Start starts the installed service
 func Start() error {
+	if runtime.GOOS == "darwin" {
+		return startDarwinService()
+	}
+
 	svcConfig := &service.Config{
 		Name:        ServiceName,
 		DisplayName: ServiceDisplayName,
@@ -198,8 +333,35 @@ func Start() error {
 	return s.Start()
 }
 
+func startDarwinService() error {
+	plistPath := fmt.Sprintf("/Library/LaunchDaemons/%s.plist", ServiceName)
+
+	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
+		return fmt.Errorf("服务未安装")
+	}
+
+	script := fmt.Sprintf(`
+do shell script "launchctl load -w '%s'" with administrator privileges
+`, plistPath)
+
+	cmd := exec.Command("osascript", "-e", script)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		outputStr := strings.TrimSpace(string(output))
+		if strings.Contains(outputStr, "User canceled") || strings.Contains(outputStr, "-128") {
+			return fmt.Errorf("用户取消了授权")
+		}
+		return fmt.Errorf("启动服务失败: %s", outputStr)
+	}
+	return nil
+}
+
 // Stop stops the installed service
 func Stop() error {
+	if runtime.GOOS == "darwin" {
+		return stopDarwinService()
+	}
+
 	svcConfig := &service.Config{
 		Name:        ServiceName,
 		DisplayName: ServiceDisplayName,
@@ -215,8 +377,34 @@ func Stop() error {
 	return s.Stop()
 }
 
+func stopDarwinService() error {
+	plistPath := fmt.Sprintf("/Library/LaunchDaemons/%s.plist", ServiceName)
+
+	script := fmt.Sprintf(`
+do shell script "launchctl unload '%s'" with administrator privileges
+`, plistPath)
+
+	cmd := exec.Command("osascript", "-e", script)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		outputStr := strings.TrimSpace(string(output))
+		if strings.Contains(outputStr, "User canceled") || strings.Contains(outputStr, "-128") {
+			return fmt.Errorf("用户取消了授权")
+		}
+		return fmt.Errorf("停止服务失败: %s", outputStr)
+	}
+	return nil
+}
+
 // Restart restarts the installed service
 func Restart() error {
+	if runtime.GOOS == "darwin" {
+		if err := stopDarwinService(); err != nil {
+			// Ignore stop error, service might not be running
+		}
+		return startDarwinService()
+	}
+
 	svcConfig := &service.Config{
 		Name:        ServiceName,
 		DisplayName: ServiceDisplayName,
@@ -234,6 +422,10 @@ func Restart() error {
 
 // Status returns the status of the service
 func Status() (service.Status, error) {
+	if runtime.GOOS == "darwin" {
+		return darwinServiceStatus()
+	}
+
 	svcConfig := &service.Config{
 		Name:        ServiceName,
 		DisplayName: ServiceDisplayName,
@@ -249,8 +441,39 @@ func Status() (service.Status, error) {
 	return s.Status()
 }
 
+func darwinServiceStatus() (service.Status, error) {
+	plistPath := fmt.Sprintf("/Library/LaunchDaemons/%s.plist", ServiceName)
+
+	// Check if plist exists
+	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
+		return service.StatusUnknown, nil
+	}
+
+	// Use launchctl print to check system service status (works without sudo)
+	cmd := exec.Command("launchctl", "print", fmt.Sprintf("system/%s", ServiceName))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Service is installed but not loaded
+		return service.StatusStopped, nil
+	}
+
+	outputStr := string(output)
+	// Check for "state = running" in output
+	if strings.Contains(outputStr, "state = running") {
+		return service.StatusRunning, nil
+	}
+
+	return service.StatusStopped, nil
+}
+
 // IsInstalled checks if the service is installed
 func IsInstalled() bool {
+	if runtime.GOOS == "darwin" {
+		plistPath := fmt.Sprintf("/Library/LaunchDaemons/%s.plist", ServiceName)
+		_, err := os.Stat(plistPath)
+		return err == nil
+	}
+
 	status, err := Status()
 	if err != nil {
 		return false

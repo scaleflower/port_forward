@@ -13,7 +13,11 @@ const dataLoading = ref(false)
 
 const config = ref({
   logLevel: 'info',
-  autoStart: false
+  autoStart: false,
+  trayEnabled: true,
+  hotkeyEnabled: true,
+  hotkeyModifiers: 'cmd+shift',
+  hotkeyKey: 'p'
 })
 
 const serviceLoading = ref(false)
@@ -56,12 +60,31 @@ function getPlatformDisplay(): string {
   return `${osNames[os] || os} ${archNames[arch] || arch}`
 }
 
+function getHotkeyDisplay(): string {
+  const mods = config.value.hotkeyModifiers
+  const key = config.value.hotkeyKey.toUpperCase()
+  const isMac = systemInfo.value.os === 'darwin'
+
+  const modMap: Record<string, string> = {
+    'cmd+shift': isMac ? '⌘ + ⇧' : 'Ctrl + Shift',
+    'ctrl+shift': 'Ctrl + ⇧',
+    'cmd+alt': isMac ? '⌘ + ⌥' : 'Ctrl + Alt',
+    'ctrl+alt': 'Ctrl + Alt'
+  }
+
+  return `${modMap[mods] || mods.toUpperCase()} + ${key}`
+}
+
 async function loadConfig() {
   try {
     const appConfig = store.getConfig()
     if (appConfig) {
       config.value.logLevel = appConfig.logLevel || 'info'
       config.value.autoStart = appConfig.autoStart || false
+      config.value.trayEnabled = appConfig.trayEnabled !== false
+      config.value.hotkeyEnabled = appConfig.hotkeyEnabled !== false
+      config.value.hotkeyModifiers = appConfig.hotkeyModifiers || 'cmd+shift'
+      config.value.hotkeyKey = appConfig.hotkeyKey || 'p'
     }
   } catch (e) {
     console.error('Failed to load config:', e)
@@ -74,9 +97,13 @@ async function saveConfig() {
     await store.saveConfig({
       ...currentConfig,
       logLevel: config.value.logLevel,
-      autoStart: config.value.autoStart
+      autoStart: config.value.autoStart,
+      trayEnabled: config.value.trayEnabled,
+      hotkeyEnabled: config.value.hotkeyEnabled,
+      hotkeyModifiers: config.value.hotkeyModifiers,
+      hotkeyKey: config.value.hotkeyKey
     } as any)
-    ElMessage.success('Settings saved')
+    ElMessage.success('Settings saved. Restart app for changes to take effect.')
   } catch (e: any) {
     ElMessage.error(e.message || 'Failed to save')
   }
@@ -413,9 +440,9 @@ async function clearAllData() {
         <span>General Settings</span>
       </template>
 
-      <el-form :model="config" label-width="140px" style="max-width: 500px">
+      <el-form :model="config" label-width="140px" style="max-width: 600px">
         <el-form-item label="Log Level">
-          <el-select v-model="config.logLevel" style="width: 100%">
+          <el-select v-model="config.logLevel" style="width: 200px">
             <el-option label="Debug" value="debug" />
             <el-option label="Info" value="info" />
             <el-option label="Warning" value="warn" />
@@ -427,6 +454,52 @@ async function clearAllData() {
           <el-switch v-model="config.autoStart" />
           <span class="form-tip">Start enabled rules automatically when service starts</span>
         </el-form-item>
+
+        <el-divider content-position="left">Quick Access</el-divider>
+
+        <el-form-item label="System Tray">
+          <el-switch v-model="config.trayEnabled" />
+          <span class="form-tip">Show icon in system tray / menu bar</span>
+        </el-form-item>
+
+        <el-form-item label="Global Hotkey">
+          <el-switch v-model="config.hotkeyEnabled" />
+          <span class="form-tip">Enable global hotkey to show window</span>
+        </el-form-item>
+
+        <el-form-item label="Hotkey Combo" v-if="config.hotkeyEnabled">
+          <div class="hotkey-combo">
+            <el-select v-model="config.hotkeyModifiers" style="width: 140px">
+              <el-option label="Cmd + Shift" value="cmd+shift" />
+              <el-option label="Ctrl + Shift" value="ctrl+shift" />
+              <el-option label="Cmd + Alt" value="cmd+alt" />
+              <el-option label="Ctrl + Alt" value="ctrl+alt" />
+            </el-select>
+            <span class="hotkey-plus">+</span>
+            <el-select v-model="config.hotkeyKey" style="width: 80px">
+              <el-option label="P" value="p" />
+              <el-option label="F" value="f" />
+              <el-option label="M" value="m" />
+              <el-option label="O" value="o" />
+              <el-option label="W" value="w" />
+            </el-select>
+          </div>
+          <div class="hotkey-display">
+            Current: {{ getHotkeyDisplay() }}
+          </div>
+        </el-form-item>
+
+        <el-alert
+          v-if="config.hotkeyEnabled && systemInfo.os === 'darwin'"
+          type="warning"
+          :closable="false"
+          style="margin-bottom: 16px"
+        >
+          <template #title>
+            macOS requires Accessibility permission for global hotkeys.
+            Go to System Settings → Privacy & Security → Accessibility.
+          </template>
+        </el-alert>
 
         <el-form-item>
           <el-button type="primary" @click="saveConfig">Save Settings</el-button>
@@ -604,5 +677,26 @@ async function clearAllData() {
 .file-tip {
   color: #909399;
   font-size: 13px;
+}
+
+.hotkey-combo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hotkey-plus {
+  font-weight: bold;
+  color: #606266;
+}
+
+.hotkey-display {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f5f7fa;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 14px;
+  color: #409eff;
 }
 </style>
