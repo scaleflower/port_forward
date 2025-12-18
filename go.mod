@@ -9,6 +9,7 @@ require (
 	github.com/kardianos/service v1.2.4
 	github.com/wailsapp/wails/v2 v2.11.0
 	golang.design/x/hotkey v0.4.1
+	golang.org/x/sys v0.38.0
 )
 
 require (
@@ -86,7 +87,6 @@ require (
 	golang.org/x/mod v0.29.0 // indirect
 	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/term v0.37.0 // indirect
 	golang.org/x/text v0.31.0 // indirect
 	golang.org/x/time v0.11.0 // indirect

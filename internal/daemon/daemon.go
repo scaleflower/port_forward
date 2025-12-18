@@ -143,6 +143,11 @@ func (d *Daemon) Run() error {
 
 // Install installs the daemon as a system service
 func Install() error {
+	// Check for admin privileges on Windows
+	if runtime.GOOS == "windows" && !isAdmin() {
+		return fmt.Errorf("需要管理员权限。请右键点击程序，选择「以管理员身份运行」，或在管理员命令提示符中运行：pfm.exe service install")
+	}
+
 	// Get executable path
 	execPath, err := os.Executable()
 	if err != nil {
@@ -180,10 +185,13 @@ func Install() error {
 	// Check current status
 	status, _ := s.Status()
 	if status == service.StatusRunning {
-		return fmt.Errorf("service is already running, please stop it first")
+		return fmt.Errorf("服务已在运行中，请先停止服务")
 	}
 
 	if err := s.Install(); err != nil {
+		if runtime.GOOS == "windows" {
+			return fmt.Errorf("安装服务失败: %w\n\n请确保：\n1. 以管理员身份运行程序\n2. 将程序复制到固定目录（如 C:\\Tools\\pfm）\n3. 程序路径: %s", err, execPath)
+		}
 		return fmt.Errorf("failed to install service: %w (executable: %s)", err, execPath)
 	}
 
