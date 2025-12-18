@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { onMounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useRulesStore } from './stores/rules'
 
@@ -16,8 +16,22 @@ const menuItems = [
   { path: '/settings', icon: 'Setting', title: '设置' }
 ]
 
+// Global service status polling
+let statusInterval: number | null = null
+
 onMounted(async () => {
   await store.init()
+  // Poll service status every 5 seconds for status bar
+  statusInterval = window.setInterval(() => {
+    store.fetchServiceStatus()
+  }, 5000)
+})
+
+onUnmounted(() => {
+  if (statusInterval) {
+    clearInterval(statusInterval)
+    statusInterval = null
+  }
 })
 
 function navigateTo(path: string) {

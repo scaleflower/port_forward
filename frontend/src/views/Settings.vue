@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRulesStore } from '../stores/rules'
 import { ExportData, ImportData, ClearAllData } from '../../wailsjs/go/main/App'
@@ -23,9 +23,25 @@ const config = ref({
 const serviceLoading = ref(false)
 const systemInfo = ref({ os: '', arch: '', version: '' })
 
+// Service status polling interval
+let statusInterval: number | null = null
+
 onMounted(async () => {
   await loadConfig()
   await loadSystemInfo()
+  // Refresh service status immediately
+  await store.fetchServiceStatus()
+  // Poll service status every 3 seconds
+  statusInterval = window.setInterval(() => {
+    store.fetchServiceStatus()
+  }, 3000)
+})
+
+onUnmounted(() => {
+  if (statusInterval) {
+    clearInterval(statusInterval)
+    statusInterval = null
+  }
 })
 
 async function loadSystemInfo() {
