@@ -19,30 +19,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows
+          # Windows x64 (with NSIS installer)
           - os: windows-latest
             platform: windows/amd64
             output: pfm-windows-amd64.exe
             artifact: pfm-windows-amd64
+            nsis: true
+          # Windows x86 (portable only, no NSIS)
           - os: windows-latest
             platform: windows/386
             output: pfm-windows-386.exe
             artifact: pfm-windows-386
-          # Linux x86_64
-          - os: ubuntu-latest
+            nsis: false
+          # Linux x86_64 (use ubuntu-22.04 for webkit2gtk-4.0)
+          - os: ubuntu-22.04
             platform: linux/amd64
             output: pfm-linux-amd64
             artifact: pfm-linux-amd64
-          # Linux ARM64
-          - os: ubuntu-latest
-            platform: linux/arm64
-            output: pfm-linux-arm64
-            artifact: pfm-linux-arm64
-          # macOS
+          # macOS Intel
           - os: macos-latest
             platform: darwin/amd64
             output: pfm-macos-intel.app
             artifact: pfm-macos-intel
+          # macOS Apple Silicon
           - os: macos-latest
             platform: darwin/arm64
             output: pfm-macos-apple-silicon.app
@@ -70,18 +69,12 @@ jobs:
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      # Linux dependencies (Ubuntu 24.04 uses libwebkit2gtk-4.1-dev)
+      # Linux dependencies (Ubuntu 22.04 has webkit2gtk-4.0)
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
-
-      # Install ARM64 cross-compilation toolchain for Linux ARM64 build
-      - name: Install Linux ARM64 cross-compilation tools
-        if: runner.os == 'Linux' && contains(matrix.platform, 'arm64')
-        run: |
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
 
       # Windows dependencies for CGO
       - name: Setup MSYS2 (Windows)
@@ -92,9 +85,9 @@ jobs:
           update: true
           install: mingw-w64-x86_64-gcc mingw-w64-i686-gcc
 
-      # Install NSIS for Windows installer
+      # Install NSIS for Windows installer (only for amd64)
       - name: Install NSIS (Windows)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.nsis == true
         run: choco install nsis -y
 
       - name: Install frontend dependencies
@@ -109,17 +102,10 @@ jobs:
             export PATH="/c/msys64/mingw32/bin:$PATH"
             export CC=i686-w64-mingw32-gcc
             export CXX=i686-w64-mingw32-g++
-            wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }} -nsis
+            wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }}
           elif [[ "${{ matrix.platform }}" == "windows/amd64" ]]; then
             export PATH="/c/msys64/mingw64/bin:$PATH"
             wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }} -nsis
-          elif [[ "${{ matrix.platform }}" == "linux/arm64" ]]; then
-            export CC=aarch64-linux-gnu-gcc
-            export CXX=aarch64-linux-gnu-g++
-            export CGO_ENABLED=1
-            export GOOS=linux
-            export GOARCH=arm64
-            wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }} -skipbindings
           else
             wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }}
           fi
@@ -131,7 +117,7 @@ jobs:
           mkdir -p dist
           # Copy portable exe
           cp build/bin/${{ matrix.output }} dist/
-          # Copy installer if exists
+          # Copy installer if exists (only for amd64)
           if ls build/bin/*-installer.exe 1> /dev/null 2>&1; then
             cp build/bin/*-installer.exe dist/${{ matrix.artifact }}-installer.exe
           fi
@@ -175,15 +161,13 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release
-          # Windows (portable + installer)
+          # Windows
           cp artifacts/pfm-windows-amd64/pfm-windows-amd64.exe release/
           cp artifacts/pfm-windows-386/pfm-windows-386.exe release/
-          # Windows installers (if exist)
+          # Windows installer (only amd64)
           [ -f artifacts/pfm-windows-amd64/pfm-windows-amd64-installer.exe ] && cp artifacts/pfm-windows-amd64/pfm-windows-amd64-installer.exe release/ || true
-          [ -f artifacts/pfm-windows-386/pfm-windows-386-installer.exe ] && cp artifacts/pfm-windows-386/pfm-windows-386-installer.exe release/ || true
           # Linux
           cp artifacts/pfm-linux-amd64/pfm-linux-amd64 release/
-          cp artifacts/pfm-linux-arm64/pfm-linux-arm64 release/
           # macOS
           cp artifacts/pfm-macos-intel/pfm-macos-intel.zip release/
           cp artifacts/pfm-macos-apple-silicon/pfm-macos-apple-silicon.zip release/
