@@ -83,7 +83,7 @@ function navigateTo(path: string) {
 
       <!-- Footer -->
       <el-footer class="footer" height="32px">
-        <span>Port Forward Manager v1.0.0</span>
+        <span>Port Forward Manager v1.0.14</span>
         <span v-if="store.serviceStatus !== 'not_installed'">
           服务状态: {{ store.serviceStatus === 'running' ? '运行中' : '已停止' }}
         </span>

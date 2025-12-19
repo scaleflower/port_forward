@@ -48,7 +48,9 @@ const (
 var (
 	shell32               = windows.NewLazySystemDLL("shell32.dll")
 	user32                = windows.NewLazySystemDLL("user32.dll")
+	kernel32              = windows.NewLazySystemDLL("kernel32.dll")
 	procShellNotifyIconW  = shell32.NewProc("Shell_NotifyIconW")
+	procExtractIconExW    = shell32.NewProc("ExtractIconExW")
 	procRegisterClassExW  = user32.NewProc("RegisterClassExW")
 	procCreateWindowExW   = user32.NewProc("CreateWindowExW")
 	procDefWindowProcW    = user32.NewProc("DefWindowProcW")
@@ -65,6 +67,7 @@ var (
 	procGetCursorPos      = user32.NewProc("GetCursorPos")
 	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
 	procPostMessageW      = user32.NewProc("PostMessageW")
+	procGetModuleFileNameW = kernel32.NewProc("GetModuleFileNameW")
 )
 
 type NOTIFYICONDATAW struct {
@@ -240,8 +243,12 @@ func (t *WindowsTrayManager) run() {
 	}
 	t.hwnd = windows.Handle(hwnd)
 
-	// Load default icon
-	icon, _, _ := procLoadIconW.Call(0, uintptr(32512)) // IDI_APPLICATION
+	// Try to load icon from current executable
+	icon := loadAppIcon()
+	if icon == 0 {
+		// Fallback to default icon
+		icon, _, _ = procLoadIconW.Call(0, uintptr(32512)) // IDI_APPLICATION
+	}
 
 	// Setup notification icon data
 	t.nid = NOTIFYICONDATAW{
@@ -353,4 +360,36 @@ func (t *WindowsTrayManager) stop() {
 	if t.hwnd != 0 {
 		procDestroyWindow.Call(uintptr(t.hwnd))
 	}
+}
+
+// loadAppIcon loads the icon from the current executable
+func loadAppIcon() uintptr {
+	// Get current executable path
+	buf := make([]uint16, 260)
+	n, _, _ := procGetModuleFileNameW.Call(0, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if n == 0 {
+		log.Println("[Tray] Failed to get module file name")
+		return 0
+	}
+
+	exePath := windows.UTF16ToString(buf[:n])
+
+	// Extract small icon from executable
+	exePathPtr, _ := windows.UTF16PtrFromString(exePath)
+	var smallIcon uintptr
+	ret, _, _ := procExtractIconExW.Call(
+		uintptr(unsafe.Pointer(exePathPtr)),
+		0, // Icon index
+		0, // Large icon (not needed)
+		uintptr(unsafe.Pointer(&smallIcon)),
+		1, // Number of icons to extract
+	)
+
+	if ret == 0 || smallIcon == 0 {
+		log.Printf("[Tray] Failed to extract icon from %s", exePath)
+		return 0
+	}
+
+	log.Printf("[Tray] Loaded app icon from %s", exePath)
+	return smallIcon
 }

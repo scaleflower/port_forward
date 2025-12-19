@@ -454,7 +454,7 @@ async function clearAllData() {
 
       <el-descriptions :column="1" border>
         <el-descriptions-item label="Application">Port Forward Manager</el-descriptions-item>
-        <el-descriptions-item label="Version">1.0.0</el-descriptions-item>
+        <el-descriptions-item label="Version">1.0.14</el-descriptions-item>
         <el-descriptions-item label="Core Engine">gost (go-gost/x)</el-descriptions-item>
         <el-descriptions-item label="Framework">Wails v2 + Vue 3</el-descriptions-item>
         <el-descriptions-item label="Platform">

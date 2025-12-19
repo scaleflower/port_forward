@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="arrowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#fff;stop-opacity:0.9" />
+      <stop offset="100%" style="stop-color:#fff;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect x="64" y="64" width="896" height="896" rx="180" ry="180" fill="url(#bgGrad)"/>
+
+  <!-- Left node (source port) -->
+  <circle cx="280" cy="512" r="90" fill="none" stroke="#fff" stroke-width="40"/>
+  <circle cx="280" cy="512" r="40" fill="#fff"/>
+
+  <!-- Right node (destination port) -->
+  <circle cx="744" cy="512" r="90" fill="none" stroke="#fff" stroke-width="40"/>
+  <circle cx="744" cy="512" r="40" fill="#fff"/>
+
+  <!-- Connection arrow -->
+  <path d="M 400 512 L 600 512" stroke="url(#arrowGrad)" stroke-width="40" stroke-linecap="round"/>
+
+  <!-- Arrow head -->
+  <polygon points="580,460 660,512 580,564" fill="#fff"/>
+
+  <!-- Small data packets animation dots -->
+  <circle cx="450" cy="512" r="16" fill="#fff" opacity="0.7"/>
+  <circle cx="520" cy="512" r="16" fill="#fff" opacity="0.85"/>
+</svg>
