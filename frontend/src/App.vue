@@ -1,19 +1,27 @@
 <script lang="ts" setup>
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, markRaw } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useRulesStore } from './stores/rules'
+import {
+  DataAnalysis,
+  Switch,
+  RefreshRight,
+  Connection,
+  Document,
+  Setting
+} from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
 const store = useRulesStore()
 
 const menuItems = [
-  { path: '/', icon: 'DataAnalysis', title: '仪表盘' },
-  { path: '/forward', icon: 'Switch', title: '端口转发' },
-  { path: '/reverse', icon: 'RefreshRight', title: '反向代理' },
-  { path: '/chains', icon: 'Connection', title: '代理链' },
-  { path: '/logs', icon: 'Document', title: '日志' },
-  { path: '/settings', icon: 'Setting', title: '设置' }
+  { path: '/', icon: markRaw(DataAnalysis), title: '仪表盘' },
+  { path: '/forward', icon: markRaw(Switch), title: '端口转发' },
+  { path: '/reverse', icon: markRaw(RefreshRight), title: '反向代理' },
+  { path: '/chains', icon: markRaw(Connection), title: '代理链' },
+  { path: '/logs', icon: markRaw(Document), title: '日志' },
+  { path: '/settings', icon: markRaw(Setting), title: '设置' }
 ]
 
 // Global service status polling
@@ -83,7 +91,7 @@ function navigateTo(path: string) {
 
       <!-- Footer -->
       <el-footer class="footer" height="32px">
-        <span>Port Forward Manager v1.0.14</span>
+        <span>Port Forward Manager v1.0.15</span>
         <span v-if="store.serviceStatus !== 'not_installed'">
           服务状态: {{ store.serviceStatus === 'running' ? '运行中' : '已停止' }}
         </span>

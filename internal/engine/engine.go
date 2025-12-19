@@ -7,9 +7,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-gost/core/logger"
 	"github.com/go-gost/core/observer/stats"
 	"github.com/go-gost/core/service"
-	"github.com/go-gost/x/config/loader"
+	chain_parser "github.com/go-gost/x/config/parsing/chain"
+	service_parser "github.com/go-gost/x/config/parsing/service"
 	"github.com/go-gost/x/registry"
 	xservice "github.com/go-gost/x/service"
 	"pfm/internal/models"
@@ -145,42 +147,77 @@ func (e *Engine) StartRule(rule *models.Rule) error {
 		}
 	}
 
-	// Load the configuration
-	if err := loader.Load(cfg); err != nil {
-		e.logMgr.Error(rule.ID, rule.Name, "配置加载失败", err.Error())
+	// Parse the service configuration directly (avoiding loader.Load which clears all services)
+	if len(cfg.Services) == 0 {
+		e.logMgr.Error(rule.ID, rule.Name, "无服务配置")
 		return &models.EngineError{
 			RuleID:  rule.ID,
-			Op:      "load",
-			Message: "failed to load configuration",
+			Op:      "config",
+			Message: "no service configuration",
+		}
+	}
+
+	svcCfg := cfg.Services[0]
+	log.Printf("[Engine] Creating service for rule %s: Addr=%s, Handler=%s, Listener=%s",
+		rule.ID, svcCfg.Addr, svcCfg.Handler.Type, svcCfg.Listener.Type)
+
+	// Parse and register chain if present (must be done before creating service)
+	if len(cfg.Chains) > 0 {
+		for _, chainCfg := range cfg.Chains {
+			log.Printf("[Engine] Parsing chain: %s", chainCfg.Name)
+			chain, err := chain_parser.ParseChain(chainCfg, logger.Default())
+			if err != nil {
+				e.logMgr.Error(rule.ID, rule.Name, "链配置解析失败", err.Error())
+				return &models.EngineError{
+					RuleID:  rule.ID,
+					Op:      "chain",
+					Message: "failed to parse chain",
+					Err:     err,
+				}
+			}
+			// Register the chain so service_parser can resolve it
+			if err := registry.ChainRegistry().Register(chainCfg.Name, chain); err != nil {
+				log.Printf("[Engine] Chain %s already registered or error: %v", chainCfg.Name, err)
+			} else {
+				log.Printf("[Engine] Chain registered: %s", chainCfg.Name)
+			}
+		}
+	}
+
+	// Create the service using service_parser.ParseService
+	// This directly creates and initializes the service without clearing existing services
+	svc, err := service_parser.ParseService(svcCfg)
+	if err != nil {
+		e.logMgr.Error(rule.ID, rule.Name, "服务创建失败", err.Error())
+		return &models.EngineError{
+			RuleID:  rule.ID,
+			Op:      "parse",
+			Message: "failed to create service",
 			Err:     err,
 		}
 	}
 
-	// Debug: verify observer is still in registry after loader.Load
-	if obs := registry.ObserverRegistry().Get(observerName); obs != nil {
-		log.Printf("[Engine] After loader.Load: Observer '%s' still in registry (type: %T)", observerName, obs)
-	} else {
-		log.Printf("[Engine] WARNING: After loader.Load: Observer '%s' NOT found in registry!", observerName)
-	}
-
-	// Debug: list all registered observers
-	log.Printf("[Engine] Listing all registered observers...")
-	for _, name := range []string{observerName, "default", "stats"} {
-		if o := registry.ObserverRegistry().Get(name); o != nil {
-			log.Printf("[Engine]   - Observer '%s' found: %T", name, o)
+	if svc == nil {
+		e.logMgr.Error(rule.ID, rule.Name, "服务为空")
+		return &models.EngineError{
+			RuleID:  rule.ID,
+			Op:      "parse",
+			Message: "service is nil",
 		}
 	}
 
-	// Get the registered service
-	svc := registry.ServiceRegistry().Get(rule.ID)
-	if svc == nil {
-		e.logMgr.Error(rule.ID, rule.Name, "服务未找到")
+	// Register the service in the registry for later access
+	if err := registry.ServiceRegistry().Register(rule.ID, svc); err != nil {
+		e.logMgr.Error(rule.ID, rule.Name, "服务注册失败", err.Error())
 		return &models.EngineError{
 			RuleID:  rule.ID,
 			Op:      "registry",
-			Message: "service not found in registry",
+			Message: "failed to register service",
+			Err:     err,
 		}
 	}
+
+	log.Printf("[Engine] Service created and registered: %s, listening on %s", rule.ID, svc.Addr().String())
 
 	// Create context for the service
 	ctx, cancel := context.WithCancel(context.Background())

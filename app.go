@@ -339,7 +339,7 @@ func (a *App) GetStatus() *models.ServiceStatus {
 		if err != nil {
 			return &models.ServiceStatus{
 				Running: false,
-				Version: "1.0.14",
+				Version: "1.0.15",
 			}
 		}
 		return status
