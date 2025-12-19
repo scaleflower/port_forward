@@ -1,7 +1,6 @@
 package ipc
 
 import (
-	"net"
 	"net/rpc"
 	"net/rpc/jsonrpc"
 	"sync"
@@ -31,7 +30,7 @@ func (c *Client) Connect() error {
 	}
 
 	socketPath := GetSocketPath()
-	conn, err := net.DialTimeout("unix", socketPath, 5*time.Second)
+	conn, err := dial(socketPath, 5*time.Second)
 	if err != nil {
 		return err
 	}
@@ -75,7 +74,7 @@ func (c *Client) call(method string, args interface{}, reply interface{}) error 
 
 	if c.client == nil {
 		socketPath := GetSocketPath()
-		conn, err := net.DialTimeout("unix", socketPath, 5*time.Second)
+		conn, err := dial(socketPath, 5*time.Second)
 		if err != nil {
 			return err
 		}

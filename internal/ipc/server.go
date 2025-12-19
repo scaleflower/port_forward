@@ -52,24 +52,20 @@ func (s *Server) Start() error {
 
 	socketPath := GetSocketPath()
 
-	// Ensure directory exists
-	dir := filepath.Dir(socketPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
+	// Ensure directory exists (for Unix socket)
+	if runtime.GOOS != "windows" {
+		dir := filepath.Dir(socketPath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
 	}
 
-	// Remove existing socket file
-	os.Remove(socketPath)
-
+	// Create platform-specific listener
 	var err error
-	s.listener, err = net.Listen("unix", socketPath)
+	s.listener, err = createListener(socketPath)
 	if err != nil {
 		return err
 	}
-
-	// Set permissions on socket - allow all users to connect
-	// This is necessary when service runs as root but GUI runs as normal user
-	os.Chmod(socketPath, 0666)
 
 	// Create and register RPC handler
 	s.handler = &RPCHandler{
@@ -80,7 +76,7 @@ func (s *Server) Start() error {
 	rpc.Register(s.handler)
 
 	s.running = true
-	s.logger.Printf("[IPC Server] Listening on %s", socketPath)
+	s.logger.Printf("[IPC Server] Listening on %s", s.listener.Addr().String())
 
 	// Accept connections
 	go s.acceptLoop()
@@ -120,8 +116,8 @@ func (s *Server) Stop() error {
 		s.listener.Close()
 	}
 
-	// Clean up socket file
-	os.Remove(GetSocketPath())
+	// Clean up platform-specific resources
+	cleanupListener(GetSocketPath())
 
 	s.logger.Printf("[IPC Server] Stopped")
 	return nil
