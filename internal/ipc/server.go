@@ -340,7 +340,7 @@ func (h *RPCHandler) GetStatus(args *Empty, reply *models.ServiceStatus) error {
 		Running:     true,
 		RulesActive: len(runningIDs),
 		RulesTotal:  len(rules),
-		Version:     "1.0.0",
+		Version:     "1.0.14",
 	}
 	return nil
 }

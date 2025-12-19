@@ -169,6 +169,27 @@ func Install() error {
 
 	log.Printf("[Daemon] Installing service with executable: %s", execPath)
 
+	// Check if service needs reinstall (installed but pointing to different path)
+	if NeedsReinstall() {
+		log.Printf("[Daemon] Service installed with different path, will reinstall...")
+		oldPath := GetInstalledServicePath()
+		log.Printf("[Daemon] Old path: %s, New path: %s", oldPath, execPath)
+
+		// Stop and uninstall the old service first
+		if IsRunning() {
+			log.Printf("[Daemon] Stopping old service...")
+			if err := Stop(); err != nil {
+				log.Printf("[Daemon] Warning: failed to stop old service: %v", err)
+			}
+		}
+
+		log.Printf("[Daemon] Uninstalling old service...")
+		if err := Uninstall(); err != nil {
+			log.Printf("[Daemon] Warning: failed to uninstall old service: %v", err)
+			// Continue anyway, the install might still work
+		}
+	}
+
 	// On macOS, use launchd plist directly with admin privileges
 	if runtime.GOOS == "darwin" {
 		return installDarwinService(execPath)
@@ -526,6 +547,93 @@ func IsInstalled() bool {
 		return false
 	}
 	return status != service.StatusUnknown
+}
+
+// GetInstalledServicePath returns the executable path of the installed service
+// Returns empty string if service is not installed or path cannot be determined
+func GetInstalledServicePath() string {
+	if runtime.GOOS == "windows" {
+		return getWindowsServicePath()
+	}
+	// For other platforms, not implemented yet
+	return ""
+}
+
+// getWindowsServicePath queries Windows Service Manager to get the service executable path
+func getWindowsServicePath() string {
+	// Use sc qc command to query service configuration
+	cmd := exec.Command("sc", "qc", ServiceName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+
+	// Parse output to find BINARY_PATH_NAME
+	outputStr := string(output)
+	lines := strings.Split(outputStr, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "BINARY_PATH_NAME") {
+			// Format: BINARY_PATH_NAME   : "C:\path\to\pfm.exe" service run
+			// or: BINARY_PATH_NAME   : C:\path\to\pfm.exe service run
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) < 2 {
+				continue
+			}
+			pathPart := strings.TrimSpace(parts[1])
+
+			// Extract the executable path (may be quoted)
+			if strings.HasPrefix(pathPart, "\"") {
+				// Quoted path
+				endQuote := strings.Index(pathPart[1:], "\"")
+				if endQuote > 0 {
+					return pathPart[1 : endQuote+1]
+				}
+			} else {
+				// Unquoted path - take until first space (before arguments)
+				spaceIdx := strings.Index(pathPart, " ")
+				if spaceIdx > 0 {
+					return pathPart[:spaceIdx]
+				}
+				return pathPart
+			}
+		}
+	}
+	return ""
+}
+
+// NeedsReinstall checks if the service needs to be reinstalled
+// Returns true if service is installed but points to a different executable path
+func NeedsReinstall() bool {
+	if !IsInstalled() {
+		return false
+	}
+
+	installedPath := GetInstalledServicePath()
+	if installedPath == "" {
+		// Cannot determine installed path, assume no reinstall needed
+		return false
+	}
+
+	currentPath, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	currentPath, err = filepath.EvalSymlinks(currentPath)
+	if err != nil {
+		return false
+	}
+
+	// Normalize paths for comparison (case-insensitive on Windows)
+	if runtime.GOOS == "windows" {
+		installedPath = strings.ToLower(filepath.Clean(installedPath))
+		currentPath = strings.ToLower(filepath.Clean(currentPath))
+	} else {
+		installedPath = filepath.Clean(installedPath)
+		currentPath = filepath.Clean(currentPath)
+	}
+
+	return installedPath != currentPath
 }
 
 // IsRunning checks if the service is running

@@ -339,7 +339,7 @@ func (a *App) GetStatus() *models.ServiceStatus {
 		if err != nil {
 			return &models.ServiceStatus{
 				Running: false,
-				Version: "1.0.0",
+				Version: "1.0.14",
 			}
 		}
 		return status
@@ -352,7 +352,7 @@ func (a *App) GetStatus() *models.ServiceStatus {
 		Running:     true,
 		RulesActive: len(runningIDs),
 		RulesTotal:  len(rules),
-		Version:     "1.0.0",
+		Version:     "1.0.14",
 	}
 }
 

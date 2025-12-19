@@ -291,7 +291,7 @@ func handleStatus() error {
 }
 
 func handleVersion() error {
-	fmt.Println("Port Forward Manager v1.0.0")
+	fmt.Println("Port Forward Manager v1.0.14")
 	fmt.Println("Core Engine: gost (go-gost/x)")
 	return nil
 }
