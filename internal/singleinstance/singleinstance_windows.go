@@ -33,11 +33,14 @@ type windowsImpl struct {
 	running     bool
 }
 
+// Backup ports to try if primary port is occupied
+var wakeupPorts = []int{19847, 19857, 19867, 19877, 19887}
+
 // newPlatformImpl creates a new Windows implementation
 func newPlatformImpl(name string) platformImpl {
 	return &windowsImpl{
 		name:       name,
-		wakeupPort: 19847, // Fixed port for wakeup signal
+		wakeupPort: 19847, // Primary port for wakeup signal
 	}
 }
 
@@ -97,6 +100,7 @@ func (w *windowsImpl) unlock() error {
 }
 
 // startWakeupListener starts listening for wakeup signals
+// It tries multiple ports if the primary port is occupied
 func (w *windowsImpl) startWakeupListener(callback func()) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -105,11 +109,25 @@ func (w *windowsImpl) startWakeupListener(callback func()) error {
 		return nil
 	}
 
-	// Use TCP on localhost with fixed port
-	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", w.wakeupPort))
-	if err != nil {
-		log.Printf("[SingleInstance] Failed to create listener on port %d: %v", w.wakeupPort, err)
-		return err
+	// Try multiple ports in case some are occupied
+	var listener net.Listener
+	var err error
+	var usedPort int
+
+	for _, port := range wakeupPorts {
+		listener, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err == nil {
+			usedPort = port
+			w.wakeupPort = port
+			break
+		}
+		log.Printf("[SingleInstance] Port %d unavailable: %v, trying next...", port, err)
+	}
+
+	if listener == nil {
+		// All ports failed, but this is non-fatal - just log and continue
+		log.Printf("[SingleInstance] Warning: Could not start wakeup listener on any port. Single instance wakeup will not work.")
+		return nil // Return nil to not block GUI startup
 	}
 
 	w.listener = listener
@@ -143,26 +161,30 @@ func (w *windowsImpl) startWakeupListener(callback func()) error {
 		}
 	}()
 
-	log.Printf("[SingleInstance] Wakeup listener started on port %d", w.wakeupPort)
+	log.Printf("[SingleInstance] Wakeup listener started on port %d", usedPort)
 	return nil
 }
 
 // sendWakeupSignal sends a wakeup signal to the existing instance
+// It tries multiple ports to find the listening instance
 func (w *windowsImpl) sendWakeupSignal() error {
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", w.wakeupPort), 2*time.Second)
-	if err != nil {
-		log.Printf("[SingleInstance] Cannot connect to existing instance: %v", err)
-		return err
-	}
-	defer conn.Close()
+	// Try all possible ports since we don't know which one the first instance is using
+	for _, port := range wakeupPorts {
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 500*time.Millisecond)
+		if err != nil {
+			continue // Try next port
+		}
 
-	conn.SetWriteDeadline(time.Now().Add(time.Second))
-	_, err = conn.Write([]byte("WAKEUP"))
-	if err != nil {
-		log.Printf("[SingleInstance] Failed to send wakeup signal: %v", err)
-		return err
+		conn.SetWriteDeadline(time.Now().Add(time.Second))
+		_, err = conn.Write([]byte("WAKEUP"))
+		conn.Close()
+
+		if err == nil {
+			log.Printf("[SingleInstance] Wakeup signal sent successfully to port %d", port)
+			return nil
+		}
 	}
 
-	log.Println("[SingleInstance] Wakeup signal sent successfully")
-	return nil
+	log.Printf("[SingleInstance] Could not send wakeup signal to any port")
+	return nil // Non-fatal error
 }

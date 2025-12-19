@@ -82,10 +82,13 @@ func New() (*Daemon, error) {
 func (d *Daemon) run() {
 	d.logger.Println("[Daemon] Starting...")
 
-	// Start IPC server
+	// Start IPC server - this is important but not fatal
+	// If it fails, the GUI won't be able to communicate with the service,
+	// but the port forwarding rules can still work
 	if err := d.ipcServer.Start(); err != nil {
-		d.logger.Printf("[Daemon] Failed to start IPC server: %v", err)
-		return
+		d.logger.Printf("[Daemon] Warning: Failed to start IPC server: %v", err)
+		d.logger.Println("[Daemon] Service will continue in degraded mode (no GUI communication)")
+		// Continue running - don't return
 	}
 
 	// Load chains into engine
@@ -94,19 +97,23 @@ func (d *Daemon) run() {
 
 	// Start enabled rules
 	rules := d.store.GetRules()
+	startedCount := 0
+	failedCount := 0
 	for _, rule := range rules {
 		if rule.Enabled {
 			if err := d.engine.StartRule(rule); err != nil {
 				d.logger.Printf("[Daemon] Failed to start rule %s: %v", rule.Name, err)
 				d.store.UpdateRuleStatus(rule.ID, models.RuleStatusError, err.Error())
+				failedCount++
 			} else {
 				d.store.UpdateRuleStatus(rule.ID, models.RuleStatusRunning, "")
 				d.logger.Printf("[Daemon] Started rule: %s", rule.Name)
+				startedCount++
 			}
 		}
 	}
 
-	d.logger.Println("[Daemon] Started successfully")
+	d.logger.Printf("[Daemon] Started successfully (%d rules started, %d failed)", startedCount, failedCount)
 }
 
 // stop stops all daemon services

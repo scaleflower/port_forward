@@ -88,6 +88,7 @@ func (u *unixImpl) unlock() error {
 }
 
 // startWakeupListener starts listening for wakeup signals on a Unix socket
+// This is non-fatal - if it fails, the GUI will still start
 func (u *unixImpl) startWakeupListener(callback func()) error {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -101,8 +102,9 @@ func (u *unixImpl) startWakeupListener(callback func()) error {
 
 	listener, err := net.Listen("unix", u.socketPath)
 	if err != nil {
-		log.Printf("[SingleInstance] Failed to create listener: %v", err)
-		return err
+		// Non-fatal error - just log and continue
+		log.Printf("[SingleInstance] Warning: Failed to create wakeup listener: %v. Single instance wakeup will not work.", err)
+		return nil // Return nil to not block GUI startup
 	}
 
 	// Set socket permissions
@@ -144,11 +146,12 @@ func (u *unixImpl) startWakeupListener(callback func()) error {
 }
 
 // sendWakeupSignal sends a wakeup signal to the existing instance
+// This is non-fatal - if it fails, just log and continue
 func (u *unixImpl) sendWakeupSignal() error {
 	conn, err := net.DialTimeout("unix", u.socketPath, 2*time.Second)
 	if err != nil {
-		log.Printf("[SingleInstance] Cannot connect to existing instance: %v", err)
-		return err
+		log.Printf("[SingleInstance] Cannot connect to existing instance: %v (this is normal if wakeup listener failed)", err)
+		return nil // Non-fatal
 	}
 	defer conn.Close()
 
@@ -156,7 +159,7 @@ func (u *unixImpl) sendWakeupSignal() error {
 	_, err = conn.Write([]byte("WAKEUP"))
 	if err != nil {
 		log.Printf("[SingleInstance] Failed to send wakeup signal: %v", err)
-		return err
+		return nil // Non-fatal
 	}
 
 	log.Println("[SingleInstance] Wakeup signal sent successfully")
