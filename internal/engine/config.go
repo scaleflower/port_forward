@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/go-gost/x/config"
 	"pfm/internal/models"
+
+	"github.com/go-gost/x/config"
 )
 
 // RuleToGostConfig converts a Rule to gost configuration
@@ -101,14 +102,17 @@ func buildServiceConfig(rule *models.Rule) (*config.ServiceConfig, error) {
 // buildForwardHandler creates a local forward handler configuration
 // Note: forward/tcp handler doesn't support observer, stats are tracked at listener level
 func buildForwardHandler(rule *models.Rule) *config.HandlerConfig {
-	handlerType := "tcp"
+	// In Gost v3, "forward" handler handles both TCP and UDP forwarding
+	handlerType := "forward"
+
+	// Just for explicitness, though both map to "forward"
 	switch rule.Protocol {
 	case models.ProtocolUDP:
-		handlerType = "udp"
+		handlerType = "forward"
 	case models.ProtocolHTTP, models.ProtocolHTTPS:
 		handlerType = "forward"
 	default:
-		handlerType = "tcp"
+		handlerType = "forward"
 	}
 
 	return &config.HandlerConfig{

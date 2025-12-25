@@ -370,12 +370,38 @@ func (h *RPCHandler) ImportData(args *ImportDataArgs, reply *bool) error {
 		*reply = false
 		return err
 	}
+	// Stop all current rules if not merging
+	if !args.Merge {
+		currentRules := h.store.GetRules()
+		for _, rule := range currentRules {
+			if h.engine.IsRunning(rule.ID) {
+				h.engine.StopRule(rule.ID)
+			}
+		}
+	}
+
 	if err := h.store.ImportData(&data, args.Merge); err != nil {
 		*reply = false
 		return err
 	}
 	// Update engine's chain list
 	h.engine.SetChains(h.store.GetChains())
+
+	// Start enabled rules
+	importedRules := h.store.GetRules()
+	for _, rule := range importedRules {
+		if rule.Enabled {
+			if h.engine.IsRunning(rule.ID) {
+				h.engine.StopRule(rule.ID)
+			}
+			if err := h.engine.StartRule(rule); err != nil {
+				h.store.UpdateRuleStatus(rule.ID, models.RuleStatusError, err.Error())
+			} else {
+				h.store.UpdateRuleStatus(rule.ID, models.RuleStatusRunning, "")
+			}
+		}
+	}
+
 	*reply = true
 	return nil
 }

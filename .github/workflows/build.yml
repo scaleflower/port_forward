@@ -1,200 +1,122 @@
-name: Build Multi-Platform
+name: Build and Release
 
 on:
   push:
-    branches: [ main, master ]
     tags:
       - 'v*'
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 env:
-  GO_VERSION: '1.24'
-  NODE_VERSION: '18'
+  GO_VERSION: '1.24.0'
+  NODE_VERSION: '20'
 
 jobs:
-  build:
+  build-windows:
+    name: Windows Build
+    runs-on: windows-latest
     strategy:
-      fail-fast: false
       matrix:
-        include:
-          # Windows x64 (with NSIS installer)
-          - os: windows-latest
-            platform: windows/amd64
-            output: pfm-windows-amd64.exe
-            artifact: pfm-windows-amd64
-            nsis: true
-          # Windows x86 (portable only, no NSIS)
-          - os: windows-latest
-            platform: windows/386
-            output: pfm-windows-386.exe
-            artifact: pfm-windows-386
-            nsis: false
-          # Linux x86_64 (CLI-only, no GUI dependencies)
-          - os: ubuntu-22.04
-            platform: linux/amd64
-            output: pfm-linux-amd64
-            artifact: pfm-linux-amd64
-            nogui: true
-          # macOS Intel
-          - os: macos-latest
-            platform: darwin/amd64
-            output: pfm-macos-intel.app
-            artifact: pfm-macos-intel
-          # macOS Apple Silicon
-          - os: macos-latest
-            platform: darwin/arm64
-            output: pfm-macos-apple-silicon.app
-            artifact: pfm-macos-apple-silicon
-
-    runs-on: ${{ matrix.os }}
-
+        arch: [amd64, 386]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
 
-      - name: Setup Node.js
-        if: matrix.nogui != true
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
 
-      - name: Install Wails CLI
-        if: matrix.nogui != true
+      - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      # Linux GUI dependencies (only for GUI builds)
-      - name: Install Linux GUI dependencies
-        if: runner.os == 'Linux' && matrix.nogui != true
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
-
-      # Windows dependencies for CGO
-      - name: Setup MSYS2 (Windows)
-        if: runner.os == 'Windows'
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          install: mingw-w64-x86_64-gcc mingw-w64-i686-gcc
-
-      # Install NSIS for Windows installer (only for amd64)
-      - name: Install NSIS (Windows)
-        if: runner.os == 'Windows' && matrix.nsis == true
-        run: choco install nsis -y
-
-      - name: Install frontend dependencies
-        if: matrix.nogui != true
-        run: |
-          cd frontend
-          npm ci
-
-      - name: Build GUI application
-        if: matrix.nogui != true
+      - name: Build Windows ${{ matrix.arch }}
         shell: bash
         run: |
-          if [[ "${{ matrix.platform }}" == "windows/386" ]]; then
-            export PATH="/c/msys64/mingw32/bin:$PATH"
-            export CC=i686-w64-mingw32-gcc
-            export CXX=i686-w64-mingw32-g++
-            wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }}
-          elif [[ "${{ matrix.platform }}" == "windows/amd64" ]]; then
-            export PATH="/c/msys64/mingw64/bin:$PATH"
-            wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }} -nsis
-          else
-            wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }}
-          fi
-
-      - name: Build CLI application (nogui)
-        if: matrix.nogui == true
-        shell: bash
-        run: |
-          # Extract GOOS and GOARCH from platform string
-          GOOS=$(echo "${{ matrix.platform }}" | cut -d'/' -f1)
-          GOARCH=$(echo "${{ matrix.platform }}" | cut -d'/' -f2)
           mkdir -p build/bin
-          CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -tags nogui -ldflags="-w -s" -o build/bin/${{ matrix.output }} .
+          wails build -platform windows/${{ matrix.arch }} -clean -o pfm-windows-${{ matrix.arch }}.exe
 
-      # Package artifacts
-      - name: Package Windows artifact
-        if: runner.os == 'Windows'
-        run: |
-          mkdir -p dist
-          # Copy portable exe
-          cp build/bin/${{ matrix.output }} dist/
-          # Copy installer if exists (only for amd64)
-          if ls build/bin/*-installer.exe 1> /dev/null 2>&1; then
-            cp build/bin/*-installer.exe dist/${{ matrix.artifact }}-installer.exe
-          fi
-        shell: bash
-
-      - name: Package Linux artifact
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p dist
-          cp build/bin/${{ matrix.output }} dist/
-          chmod +x dist/${{ matrix.output }}
-
-      - name: Package macOS artifact
-        if: runner.os == 'macOS'
-        run: |
-          mkdir -p dist
-          cd build/bin
-          zip -r ../../dist/${{ matrix.artifact }}.zip *.app
-
-      - name: Upload artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: dist/*
-          retention-days: 30
+          name: pfm-windows-${{ matrix.arch }}
+          path: build/bin/pfm-windows-${{ matrix.arch }}.exe
 
-  # Create release when a tag is pushed
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
+  build-macos:
+    name: macOS Build
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
     steps:
-      - name: Download all artifacts
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build macOS ${{ matrix.arch }}
+        run: |
+          mkdir -p build/bin
+          # Build .app bundle
+          wails build -platform darwin/${{ matrix.arch }} -clean -o pfm.app
+          
+          # Rename and Zip
+          cd build/bin
+          if [ -d "pfm.app" ]; then
+            zip -r pfm-macos-${{ matrix.arch }}.zip pfm.app
+          else
+            echo "Error: pfm.app not found"
+            exit 1
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pfm-macos-${{ matrix.arch }}
+          path: build/bin/pfm-macos-${{ matrix.arch }}.zip
+
+  release:
+    name: Create Release
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download Windows Artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          pattern: pfm-windows-*
+          path: artifacts/windows
+          merge-multiple: true
 
-      - name: Prepare release files
-        run: |
-          mkdir -p release
-          # Windows
-          cp artifacts/pfm-windows-amd64/pfm-windows-amd64.exe release/
-          cp artifacts/pfm-windows-386/pfm-windows-386.exe release/
-          # Windows installer (only amd64)
-          [ -f artifacts/pfm-windows-amd64/pfm-windows-amd64-installer.exe ] && cp artifacts/pfm-windows-amd64/pfm-windows-amd64-installer.exe release/ || true
-          # Linux
-          cp artifacts/pfm-linux-amd64/pfm-linux-amd64 release/
-          # macOS
-          cp artifacts/pfm-macos-intel/pfm-macos-intel.zip release/
-          cp artifacts/pfm-macos-apple-silicon/pfm-macos-apple-silicon.zip release/
-
-          # Create checksums
-          cd release
-          sha256sum * > checksums.txt
+      - name: Download macOS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pfm-macos-*
+          path: artifacts/macos
+          merge-multiple: true
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: release/*
-          generate_release_notes: true
-          draft: false
-          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
+          files: |
+            artifacts/windows/*.exe
+            artifacts/macos/*.zip
+          draft: true
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

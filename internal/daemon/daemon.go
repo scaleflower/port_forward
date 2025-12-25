@@ -9,11 +9,12 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/kardianos/service"
 	"pfm/internal/engine"
 	"pfm/internal/ipc"
 	"pfm/internal/models"
 	"pfm/internal/storage"
+
+	"github.com/kardianos/service"
 )
 
 const (
@@ -211,9 +212,22 @@ func Install() error {
 	}
 
 	// Check current status
-	status, _ := s.Status()
-	if status == service.StatusRunning {
+	status, err := s.Status()
+	if err == nil && status == service.StatusRunning {
 		return fmt.Errorf("服务已在运行中，请先停止服务")
+	}
+
+	// If service exists (but not running), allow re-installation
+	// This handles cases where NeedsReinstall failed to detect path mismatch (e.g. localized sc output)
+	// or user just wants to repair/reinstall.
+	if err == nil && status != service.StatusUnknown {
+		log.Printf("[Daemon] Service exists (Status: %v), uninstalling before install...", status)
+		if err := s.Uninstall(); err != nil {
+			log.Printf("[Daemon] Warning: failed to uninstall existing service: %v", err)
+		} else {
+			// Wait a bit for Windows to release the service handle
+			// time.Sleep(1 * time.Second) // "time" package needed
+		}
 	}
 
 	if err := s.Install(); err != nil {

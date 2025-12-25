@@ -4,36 +4,17 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"pfm/internal/models"
 )
-
-// LogLevel represents the severity level of a log entry
-type LogLevel string
-
-const (
-	LogLevelDebug LogLevel = "debug"
-	LogLevelInfo  LogLevel = "info"
-	LogLevelWarn  LogLevel = "warn"
-	LogLevelError LogLevel = "error"
-)
-
-// LogEntry represents a single log entry
-type LogEntry struct {
-	ID        int64    `json:"id"`
-	Timestamp string   `json:"timestamp"`
-	Level     LogLevel `json:"level"`
-	RuleID    string   `json:"ruleId,omitempty"`
-	RuleName  string   `json:"ruleName,omitempty"`
-	Message   string   `json:"message"`
-	Details   string   `json:"details,omitempty"`
-}
 
 // LogManager manages application logs with a circular buffer
 type LogManager struct {
 	mu       sync.RWMutex
-	entries  []LogEntry
+	entries  []models.LogEntry
 	maxSize  int
 	nextID   int64
-	onChange func(entry LogEntry)
+	onChange func(entry models.LogEntry)
 }
 
 // NewLogManager creates a new log manager
@@ -42,24 +23,24 @@ func NewLogManager(maxSize int) *LogManager {
 		maxSize = 1000
 	}
 	return &LogManager{
-		entries: make([]LogEntry, 0, maxSize),
+		entries: make([]models.LogEntry, 0, maxSize),
 		maxSize: maxSize,
 		nextID:  1,
 	}
 }
 
 // SetOnChange sets a callback function that's called when a new log entry is added
-func (m *LogManager) SetOnChange(fn func(entry LogEntry)) {
+func (m *LogManager) SetOnChange(fn func(entry models.LogEntry)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.onChange = fn
 }
 
 // Add adds a new log entry
-func (m *LogManager) Add(level LogLevel, ruleID, ruleName, message string, details ...string) {
+func (m *LogManager) Add(level models.LogLevel, ruleID, ruleName, message string, details ...string) {
 	m.mu.Lock()
 
-	entry := LogEntry{
+	entry := models.LogEntry{
 		ID:        m.nextID,
 		Timestamp: time.Now().Format(time.RFC3339),
 		Level:     level,
@@ -92,22 +73,22 @@ func (m *LogManager) Add(level LogLevel, ruleID, ruleName, message string, detai
 
 // Debug adds a debug level log entry
 func (m *LogManager) Debug(ruleID, ruleName, message string, details ...string) {
-	m.Add(LogLevelDebug, ruleID, ruleName, message, details...)
+	m.Add(models.LogLevelDebug, ruleID, ruleName, message, details...)
 }
 
 // Info adds an info level log entry
 func (m *LogManager) Info(ruleID, ruleName, message string, details ...string) {
-	m.Add(LogLevelInfo, ruleID, ruleName, message, details...)
+	m.Add(models.LogLevelInfo, ruleID, ruleName, message, details...)
 }
 
 // Warn adds a warning level log entry
 func (m *LogManager) Warn(ruleID, ruleName, message string, details ...string) {
-	m.Add(LogLevelWarn, ruleID, ruleName, message, details...)
+	m.Add(models.LogLevelWarn, ruleID, ruleName, message, details...)
 }
 
 // Error adds an error level log entry
 func (m *LogManager) Error(ruleID, ruleName, message string, details ...string) {
-	m.Add(LogLevelError, ruleID, ruleName, message, details...)
+	m.Add(models.LogLevelError, ruleID, ruleName, message, details...)
 }
 
 // LogConnection logs a connection event
@@ -145,38 +126,38 @@ func (m *LogManager) LogServiceStop(ruleID, ruleName string) {
 }
 
 // GetAll returns all log entries
-func (m *LogManager) GetAll() []LogEntry {
+func (m *LogManager) GetAll() []models.LogEntry {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	result := make([]LogEntry, len(m.entries))
+	result := make([]models.LogEntry, len(m.entries))
 	copy(result, m.entries)
 	return result
 }
 
 // GetRecent returns the most recent n entries
-func (m *LogManager) GetRecent(n int) []LogEntry {
+func (m *LogManager) GetRecent(n int) []models.LogEntry {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	if n <= 0 || n >= len(m.entries) {
-		result := make([]LogEntry, len(m.entries))
+		result := make([]models.LogEntry, len(m.entries))
 		copy(result, m.entries)
 		return result
 	}
 
 	start := len(m.entries) - n
-	result := make([]LogEntry, n)
+	result := make([]models.LogEntry, n)
 	copy(result, m.entries[start:])
 	return result
 }
 
 // GetByRule returns log entries for a specific rule
-func (m *LogManager) GetByRule(ruleID string) []LogEntry {
+func (m *LogManager) GetByRule(ruleID string) []models.LogEntry {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	var result []LogEntry
+	var result []models.LogEntry
 	for _, entry := range m.entries {
 		if entry.RuleID == ruleID {
 			result = append(result, entry)
@@ -186,11 +167,11 @@ func (m *LogManager) GetByRule(ruleID string) []LogEntry {
 }
 
 // GetSince returns log entries since a specific ID
-func (m *LogManager) GetSince(sinceID int64) []LogEntry {
+func (m *LogManager) GetSince(sinceID int64) []models.LogEntry {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	var result []LogEntry
+	var result []models.LogEntry
 	for _, entry := range m.entries {
 		if entry.ID > sinceID {
 			result = append(result, entry)
@@ -203,7 +184,7 @@ func (m *LogManager) GetSince(sinceID int64) []LogEntry {
 func (m *LogManager) Clear() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.entries = make([]LogEntry, 0, m.maxSize)
+	m.entries = make([]models.LogEntry, 0, m.maxSize)
 }
 
 // formatBytes formats bytes into human-readable string

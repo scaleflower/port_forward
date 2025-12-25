@@ -1,0 +1,40 @@
+name: Test and Build
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        go-version: [ '1.24.0' ]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Install dependencies
+      run: |
+        go mod download
+        go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+    - name: Run Unit & Integration Tests
+      # Run tests, skipping /frontend/ (JS/TS) and skipping integration tests that require GUI context or platform specifics if necessary
+      run: go test -v ./internal/...
+
+    - name: Build (Check Compilation)
+      run: |
+        # Cross-platform build check (just 'go build', not wails build for speed in this step, unless full build is needed)
+        # Note: 'wails build' generates valid bundle, 'go build' might miss frontend assets if not already generated.
+        # But for backend logic check 'go build' is fine.
+        go build -v ./...
