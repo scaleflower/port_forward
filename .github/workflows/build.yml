@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [amd64, 386]
+        arch: [amd64]
     steps:
       - uses: actions/checkout@v4
 
@@ -68,20 +68,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev build-essential pkg-config
-          
-      - name: Setup 32-bit (if needed)
-        if: matrix.arch == '386'
-        run: |
-           sudo dpkg --add-architecture i386
-           sudo apt-get update
-           # Wails/CGO 32-bit compilation on 64-bit linux is complex.
-           # Typically requires gcc-multilib and 32-bit versions of dev libs.
-           # This often breaks on standard runners due to conflicting dependencies.
-           # For now, we will attempt basic install, but warn if it fails.
-           # Usually it's better to use a modal/docker for 32-bit builds.
-           # If this fails, we might need to skip 386 or use a docker container action.
-           echo "Attempting to setup 32-bit dependencies..."
-           sudo apt-get install -y gcc-multilib g++-multilib libgtk-3-dev:i386 libwebkit2gtk-4.0-dev:i386
 
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
@@ -89,16 +75,7 @@ jobs:
       - name: Build Linux ${{ matrix.arch }}
         run: |
           mkdir -p build/bin
-          # Use CGO for desktop Linux
-          # For 386, we need proper env vars
-          if [ "${{ matrix.arch }}" == "386" ]; then
-             export GOARCH=386
-             export CGO_ENABLED=1
-             # We assume gcc-multilib works. Wails build should handle GOARCH.
-             wails build -platform linux/386 -clean -o pfm-linux-386
-          else
-             wails build -platform linux/amd64 -clean -o pfm-linux-amd64
-          fi
+          wails build -platform linux/amd64 -clean -o pfm-linux-amd64
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
