@@ -49,6 +49,40 @@ func (c *RemoteController) StopRule(id string) error {
 	return c.client.StopRule(id)
 }
 
+func (c *RemoteController) StartAllRules() error {
+	// Get all rules from the remote service
+	rules, err := c.client.GetRules()
+	if err != nil {
+		return err
+	}
+
+	// Start each rule
+	var lastErr error
+	for _, rule := range rules {
+		if err := c.client.StartRule(rule.ID); err != nil {
+			lastErr = err
+		}
+	}
+	return lastErr
+}
+
+func (c *RemoteController) StopAllRules() error {
+	// Get all rules from the remote service
+	rules, err := c.client.GetRules()
+	if err != nil {
+		return err
+	}
+
+	// Stop each rule
+	var lastErr error
+	for _, rule := range rules {
+		if err := c.client.StopRule(rule.ID); err != nil {
+			lastErr = err
+		}
+	}
+	return lastErr
+}
+
 // ==================== Chain Operations ====================
 
 func (c *RemoteController) GetChains() ([]*models.Chain, error) {
