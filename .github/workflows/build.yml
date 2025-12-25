@@ -67,7 +67,9 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev build-essential pkg-config
+          # Try webkit 4.1 first (Ubuntu 22.04+), fallback to 4.0 if needed
+          sudo apt-get install -y libgtk-3-dev build-essential pkg-config
+          sudo apt-get install -y libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev
 
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
@@ -107,6 +109,13 @@ jobs:
 
       - name: Build macOS ${{ matrix.arch }}
         run: |
+          # Enable verbose output for debugging
+          export WAILS_BUILD_VERBOSITY=2
+          # Check environment
+          echo "Go version: $(go version)"
+          echo "Node version: $(node --version)"
+          echo "Wails version: $(wails version)"
+          # Build
           mkdir -p build/bin
           # Build .app bundle
           wails build -platform darwin/${{ matrix.arch }} -clean -o pfm.app
