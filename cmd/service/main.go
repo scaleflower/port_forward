@@ -85,7 +85,7 @@ func printStatus() error {
 }
 
 func printUsage() {
-	fmt.Println(`Port Forward Manager - Service
+	fmt.Print(`Port Forward Manager - Service
 
 Usage:
   pfm-service <command>
