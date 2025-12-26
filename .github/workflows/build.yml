@@ -80,7 +80,8 @@ jobs:
         run: |
           mkdir -p build/bin
           # Use xvfb-run to provide virtual X11 display during build
-          xvfb-run wails build -platform linux/amd64 -clean -o pfm-linux-amd64
+          # Use -tags webkit2_41 to support Ubuntu 24.04's webkit 4.1
+          xvfb-run wails build -platform linux/amd64 -clean -tags webkit2_41 -o pfm-linux-amd64
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
