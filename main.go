@@ -6,8 +6,11 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/wailsapp/wails/v2"
@@ -32,6 +35,9 @@ var (
 )
 
 func main() {
+	// Setup logging for Windows GUI debugging
+	setupLogging()
+
 	args := os.Args[1:]
 
 	// Check if running as service
@@ -64,6 +70,33 @@ func runAsService() {
 
 	if err := d.Run(); err != nil {
 		log.Fatalf("[Main] Service error: %v", err)
+	}
+}
+
+// setupLogging configures logging output, especially for Windows where GUI apps have no console
+func setupLogging() {
+	if runtime.GOOS == "windows" {
+		// Get executable directory
+		exePath, err := os.Executable()
+		if err != nil {
+			log.Printf("Warning: Failed to get executable path: %v", err)
+			return
+		}
+		exeDir := filepath.Dir(exePath)
+
+		// Create log file in the same directory as the executable
+		logPath := filepath.Join(exeDir, "pfm_debug.log")
+		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			// If we can't create log file, just continue without file logging
+			log.Printf("Warning: Failed to create log file: %v", err)
+			return
+		}
+
+		// Don't close the log file as we want it to persist for the lifetime of the app
+		// Set output to both stdout and file
+		log.SetOutput(io.MultiWriter(os.Stdout, logFile))
+		log.Printf("[Logging] Debug log file created at: %s", logPath)
 	}
 }
 

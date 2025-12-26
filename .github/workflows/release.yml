@@ -1,0 +1,153 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          # Windows builds
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            artifact_name: pfm-windows-amd64
+            binary_name: pfm.exe
+          - os: windows-latest
+            goos: windows
+            goarch: '386'
+            artifact_name: pfm-windows-386
+            binary_name: pfm.exe
+          
+          # Linux builds
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            artifact_name: pfm-linux-amd64
+            binary_name: pfm
+          
+          # macOS builds  
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            artifact_name: pfm-macos-amd64
+            binary_name: pfm
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            artifact_name: pfm-macos-arm64
+            binary_name: pfm
+
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      # Build frontend first - this is critical!
+      - name: Build Frontend
+        run: |
+          cd pfm/frontend
+          npm install
+          npm run build
+          cd ../..
+        shell: bash
+      
+      # Verify frontend dist exists
+      - name: Verify Frontend Build
+        run: |
+          if [ ! -d "pfm/frontend/dist" ]; then
+            echo "ERROR: frontend/dist directory not found!"
+            exit 1
+          fi
+          echo "Frontend dist directory exists, contents:"
+          ls -la pfm/frontend/dist/
+        shell: bash
+      
+      # Build the binary
+      - name: Build Binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          cd pfm
+          go build -ldflags="-s -w" -o ${{ matrix.binary_name }} .
+          cd ..
+        shell: bash
+      
+      # Verify binary size (should be > 15MB with embedded frontend)
+      - name: Verify Binary Size
+        run: |
+          SIZE=$(wc -c < "pfm/${{ matrix.binary_name }}" | tr -d ' ')
+          echo "Binary size: $SIZE bytes"
+          if [ $SIZE -lt 15000000 ]; then
+            echo "WARNING: Binary size is smaller than expected (< 15MB)"
+            echo "This might indicate missing embedded resources!"
+            exit 1
+          fi
+          echo "Binary size check passed"
+        shell: bash
+      
+      # Upload artifact
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: pfm/${{ matrix.binary_name }}
+  
+  # Create release and upload binaries
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            pfm-windows-amd64/pfm.exe
+            pfm-windows-386/pfm.exe
+            pfm-linux-amd64/pfm
+            pfm-macos-amd64/pfm
+            pfm-macos-arm64/pfm
+          body: |
+            ## What's New
+            
+            ### Features
+            - Multi-platform support with native builds for Windows, Linux, and macOS
+            - Support for both amd64 and 386 architectures on Windows
+            - Support for both Intel (amd64) and Apple Silicon (arm64) on macOS
+            - Debug logging enabled for Windows to help diagnose issues
+            
+            ### Platforms
+            - ✅ Windows (amd64, 386)
+            - ✅ Linux (amd64)
+            - ✅ macOS (Intel and Apple Silicon)
+            
+            ### Downloads
+            Choose the appropriate binary for your platform from the Assets below:
+            - **Windows 64-bit**: `pfm-windows-amd64.exe`
+            - **Windows 32-bit**: `pfm-windows-386.exe`
+            - **Linux 64-bit**: `pfm-linux-amd64`
+            - **macOS Intel**: `pfm-macos-amd64`
+            - **macOS Apple Silicon**: `pfm-macos-arm64`
+            
+            ### Debug Information
+            On Windows, if the application doesn't start, check the `pfm_debug.log` file in the same directory as the executable for error messages.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
